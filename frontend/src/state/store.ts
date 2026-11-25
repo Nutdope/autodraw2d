@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, ApiError } from "../api/client";
+import { resolveDimensions } from "../components/drawing/dimensionGeometry";
 import type {
   AnnotationSet,
   DimensionMode,
@@ -158,7 +159,6 @@ export const useStore = create<State>((set, get) => {
       if (!part || !layout) return;
       set({ exporting: format });
       try {
-        const { resolveDimensions } = await import("../components/drawing/Dimensions");
         const { blob, filename } = await api.exportSheet(part.part_id, {
           format,
           sheet,
