@@ -1,0 +1,109 @@
+{
+ "views": [
+  "front"
+ ],
+ "dimensions": [
+  {
+   "type": "linear",
+   "id": "AL1",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 0.0,
+   "x2": 100.0,
+   "y2": 0.0,
+   "orientation": "horizontal",
+   "offset_mm": 15.0,
+   "offset_from": "edge",
+   "value_mm": 100.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL2",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 0.0,
+   "x2": 0.0,
+   "y2": 12.0,
+   "orientation": "vertical",
+   "offset_mm": -15.0,
+   "offset_from": "edge",
+   "value_mm": 12.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL3",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 12.0,
+   "x2": 20.0,
+   "y2": 12.0,
+   "orientation": "horizontal",
+   "offset_mm": -8.0,
+   "offset_from": "edge",
+   "value_mm": 20.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL5",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 12.0,
+   "x2": 80.0,
+   "y2": 12.0,
+   "orientation": "horizontal",
+   "offset_mm": -22.0,
+   "offset_from": "edge",
+   "value_mm": 80.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL6",
+   "view": "front",
+   "x1": 12.5,
+   "y1": 0.0,
+   "x2": 12.5,
+   "y2": 4.0,
+   "orientation": "vertical",
+   "offset_mm": -8.0,
+   "offset_from": "edge",
+   "value_mm": 4.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL7",
+   "view": "front",
+   "x1": 40.0,
+   "y1": 0.0,
+   "x2": 40.0,
+   "y2": 8.0,
+   "orientation": "vertical",
+   "offset_mm": 8.0,
+   "offset_from": "edge",
+   "value_mm": 8.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  }
+ ],
+ "ai_notes": [
+  "UNSPECIFIED RADII R5.0",
+  "REMOVE ALL BURRS AND SHARP EDGES"
+ ],
+ "model": "gemini-3.5-flash",
+ "rejected": 1
+}

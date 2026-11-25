@@ -124,6 +124,17 @@ class Centerline(BaseModel):
     feature_ids: list[str]
 
 
+class ArcMark(BaseModel):
+    """A fillet / round seen as a true arc in this view (radius callout target)."""
+
+    cx: float
+    cy: float
+    r: float
+    feature_id: str
+    concave: bool
+    mid_angle_deg: float  # paper convention: CCW from +x with y UP
+
+
 class ViewProjection(BaseModel):
     name: str
     is_isometric: bool
@@ -139,6 +150,7 @@ class ViewProjection(BaseModel):
     tangent_hidden: EdgeLayer
     center_marks: list[CenterMark]
     centerlines: list[Centerline]
+    arc_marks: list[ArcMark] = []
     compute_ms: float
 
 

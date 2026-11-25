@@ -132,3 +132,65 @@ export interface SheetLayout {
   fits: boolean;
   warnings: string[];
 }
+
+// --- annotations (backend/app/annotation/models.py) -------------------------
+export type DimensionMode = "none" | "overall" | "key" | "full";
+
+export interface LinearDim {
+  type: "linear";
+  id: string;
+  view: ViewName;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  orientation: "horizontal" | "vertical";
+  offset_mm: number; // paper mm; horizontal + above / − below, vertical + right / − left
+  offset_from: "edge" | "points";
+  value_mm: number;
+  prefix: "" | "Ø";
+  tolerance_text: string | null;
+  text_shift_mm: number;
+}
+
+export interface CircleDim {
+  type: "diameter" | "radius";
+  id: string;
+  view: ViewName;
+  cx: number;
+  cy: number;
+  radius: number;
+  leader_angle_deg: number; // CCW from +x, y up
+  leader_len_mm: number;
+  inside: boolean;
+  label_text: string;
+  feature_ids: string[];
+}
+
+export type Dimension = LinearDim | CircleDim;
+
+export interface AnnotationSet {
+  mode: DimensionMode;
+  views: OrthoView[];
+  source: "deterministic" | "ai" | "ai_cached" | "precomputed";
+  dimensions: Dimension[];
+  notes: string[];
+  fallback_reason: string | null;
+  model: string | null;
+  rejected: number;
+}
+
+export interface AnnotateRequest {
+  mode: DimensionMode;
+  ortho_views: OrthoView[];
+  use_ai: boolean;
+  tolerance: string;
+}
+
+/** User drag overrides, keyed by dimension id. */
+export interface DimOverride {
+  offset_mm?: number;
+  text_shift_mm?: number;
+  leader_angle_deg?: number;
+  leader_len_mm?: number;
+}

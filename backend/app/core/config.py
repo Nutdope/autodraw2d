@@ -27,7 +27,11 @@ class Settings:
     memory_cache_items: int = int(os.getenv("MEMORY_CACHE_ITEMS", "24"))
     warm_samples: bool = os.getenv("WARM_SAMPLES", "1") == "1"
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    # Tried in order when the primary model is overloaded (503) or retired (404).
+    gemini_fallback_models: list[str] = field(
+        default_factory=lambda: _list("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash,gemini-3.5-flash-lite")
+    )
 
 
 settings = Settings()

@@ -19,6 +19,9 @@ from typing import Optional
 from ..geometry.models import PartAnalysis
 from ..pipeline import analyze_part
 
+# Bump whenever PartAnalysis gains fields so stale disk caches are recomputed.
+ANALYSIS_VERSION = 3
+
 
 @dataclass
 class PartEntry:
@@ -76,6 +79,8 @@ class PartStore:
             return None
         try:
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("version") != ANALYSIS_VERSION:
+                return None
             analysis = PartAnalysis.model_validate_json(analysis_file.read_text(encoding="utf-8"))
         except Exception:
             return None  # stale / corrupt cache -> recompute on next ingest
@@ -96,6 +101,7 @@ class PartStore:
             analysis.part_name = name
             (d / "analysis.json").write_text(analysis.model_dump_json(), encoding="utf-8")
             (d / "meta.json").write_text(
-                json.dumps({"name": name, "source": source, "sample_id": sample_id}), encoding="utf-8"
+                json.dumps({"name": name, "source": source, "sample_id": sample_id,
+                            "version": ANALYSIS_VERSION}), encoding="utf-8"
             )
             return self._remember(PartEntry(part_id, name, source, sample_id, analysis, d))

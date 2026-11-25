@@ -26,6 +26,7 @@ from OCP.TopoDS import TopoDS, TopoDS_Shape
 
 from . import vec
 from .models import (
+    ArcMark,
     ArcPrim,
     Centerline,
     CenterMark,
@@ -113,9 +114,10 @@ def _edge_to_prim(edge, deflection: float) -> _Prim | None:
             ccw = axz > 0  # parameter increases CCW in y-up space
             a0 = math.atan2(p0[1] - c[1], p0[0] - c[0])
             pts = [p0, p1] + _arc_bbox_pts(c, r, a0, span, ccw)
-            # Flipping y (to SVG space) turns CCW into the SVG positive sweep.
+            # The y-flip to SVG space preserves on-screen orientation: a CCW arc stays
+            # CCW on screen, which is SVG's *negative* sweep direction (flag 0).
             data = {"c": c, "r": r, "p0": p0, "p1": p1,
-                    "large": int(span > math.pi), "sweep": int(ccw)}
+                    "large": int(span > math.pi), "sweep": int(not ccw)}
             return _Prim("arc", data, pts)
 
     pts = _sample(curve, u0, u1, deflection)
@@ -208,8 +210,38 @@ def _to_model(prim: _Prim, t: _Local):
 
 
 # ---------------------------------------------------------------------------
-# Feature annotations per view (center marks & centerlines)
+# Feature annotations per view (center marks, centerlines, arc marks)
 # ---------------------------------------------------------------------------
+def _arc_marks(features: list[CylinderFeature], view: ViewDef, t: _Local, arcs: list[ArcPrim]) -> list[ArcMark]:
+    """Fillets/rounds whose axis points at the viewer appear as true arcs.
+
+    The mid-angle comes from the actual projected arc primitive, so a radius
+    leader always lands on visible geometry.
+    """
+    if view.is_isometric:
+        return []
+    out: list[ArcMark] = []
+    for f in features:
+        if f.kind not in ("concave_arc", "convex_arc") or abs(vec.dot(f.axis, view.normal)) < 0.999:
+            continue
+        cx, cy = t.pt(view.project(f.center))
+        for a in arcs:
+            if math.dist(a.c, (cx, cy)) > 1e-3 or abs(a.r - f.radius) > 1e-3:
+                continue
+            a0 = math.atan2(a.p0[1] - cy, a.p0[0] - cx)  # SVG (y-down) angles
+            a1 = math.atan2(a.p1[1] - cy, a.p1[0] - cx)
+            if a.sweep:
+                mid = a0 + ((a1 - a0) % (2 * math.pi)) / 2
+            else:
+                mid = a0 - ((a0 - a1) % (2 * math.pi)) / 2
+            out.append(ArcMark(
+                cx=cx, cy=cy, r=f.radius, feature_id=f.id, concave=f.kind == "concave_arc",
+                mid_angle_deg=round(-math.degrees(mid) % 360, 3),  # -> y-up paper convention
+            ))
+            break
+    return out
+
+
 def _project_features(features: list[CylinderFeature], view: ViewDef, t: _Local):
     if view.is_isometric:
         return [], []
@@ -298,6 +330,8 @@ def project_view(
         layers[layer] = EdgeLayer(primitives=models, svg_path=primitives_to_svg_path(models))
 
     marks, clines = _project_features(features, view, t)
+    arc_prims = [p for layer in ("visible", "hidden") for p in layers[layer].primitives if p.type == "arc"]
+    arcs = _arc_marks(features, view, t, arc_prims)
     r = lambda v: round(v, ND) + 0.0  # noqa: E731
     return ViewProjection(
         name=view.name,
@@ -310,6 +344,7 @@ def project_view(
         height=r(ymax - ymin),
         center_marks=marks,
         centerlines=clines,
+        arc_marks=arcs,
         compute_ms=round((time.perf_counter() - t0) * 1000, 1),
         **layers,
     )

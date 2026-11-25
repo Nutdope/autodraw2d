@@ -82,6 +82,32 @@ to point `VITE_API_URL` at a deployed backend.
 | GET  | `/api/parts/{id}/mesh.stl` | 3D preview mesh |
 | POST | `/api/parts/{id}/layout` | `SheetConfig` → `SheetLayout` (pure Python, ~1 ms) |
 
+| POST | `/api/parts/{id}/annotate` | dimensions: deterministic / cached / Gemini (see below) |
+| GET  | `/api/ai/quota` | remaining AI calls for this IP |
+
+## Milestone 3 — dimensioning
+
+The LLM never measures. The pipeline is:
+
+1. **Kernel** extracts exact features + per-view *anchors* (corners, vertices,
+   hole centres/quadrants, arc centres, axis ends).
+2. **Deterministic dimensioner** (`app/annotation/deterministic.py`) produces a
+   correct baseline: hole callouts + datum positions, shaft Ø/step chains,
+   fillet radii, plate thicknesses, overall L×W×H, stacked at 8/15/22 mm.
+3. **Gemini** (structured JSON output) receives the anchors and baseline and returns
+   an improved layout.
+4. **Validator** (`app/annotation/validate.py`) snaps every AI point onto an anchor
+   (else drops it), recomputes every value, regenerates any callout label whose
+   numbers disagree with the kernel, and strips invented numbers from notes.
+
+AI is only spent on an explicit **Auto-Dimension (AI)** click, limited to
+`AI_RATE_LIMIT` per IP (default 5/hour). Results are cached per part and view set;
+built-in samples ship pre-computed results in `backend/samples/annotations/`
+(regenerate with `python -m scripts.precompute_annotations`). If the key is missing,
+the quota is hit or Gemini errors, the deterministic set is used and the UI shows a
+non-blocking toast. Dimension labels can be dragged (snaps to 2.5 mm with Grid on);
+double-click resets one.
+
 Parts are content-addressed (sha256), so the expensive OCC work runs once per
 file; every sheet/view change only re-runs the layout endpoint.
 

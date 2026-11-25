@@ -7,6 +7,7 @@ POST /api/parts                         -> PartOut  (multipart .step upload)
 GET  /api/parts/{part_id}               -> PartOut
 GET  /api/parts/{part_id}/mesh.stl      -> binary STL for the 3D preview
 POST /api/parts/{part_id}/layout        -> SheetLayout (pure Python, ~1 ms)
+POST /api/parts/{part_id}/annotate      -> AnnotationSet (deterministic / cached / Gemini)
 """
 from __future__ import annotations
 
@@ -14,9 +15,12 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from slowapi.util import get_remote_address
 
 from samples import SAMPLE_PARTS, sample_path
 
+from ..annotation.models import AnnotateRequest, AnnotationSet
+from ..annotation.service import ai_remaining, annotate
 from ..core.config import settings
 from ..core.rate_limit import limiter
 from ..geometry.loader import StepImportError
@@ -52,7 +56,7 @@ def load_sample(sample_id: str) -> PartEntry:
 
 @router.get("/health")
 def health() -> dict:
-    return {"status": "ok", "ai_configured": bool(settings.gemini_api_key)}
+    return {"status": "ok", "ai_configured": bool(settings.gemini_api_key), "ai_model": settings.gemini_model}
 
 
 @router.get("/samples", response_model=list[SampleOut])
@@ -108,3 +112,16 @@ def layout(part_id: str, cfg: SheetConfig) -> SheetLayout:
         return compute_layout(entry.analysis.views, cfg)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/parts/{part_id}/annotate", response_model=AnnotationSet)
+def annotate_part(part_id: str, req: AnnotateRequest, request: Request) -> AnnotationSet:
+    """AI quota (AI_RATE_LIMIT per IP) is only charged when Gemini is actually called."""
+    entry = _require(part_id)
+    return annotate(entry.analysis, entry.directory, entry.sample_id, req, get_remote_address(request))
+
+
+@router.get("/ai/quota")
+def ai_quota(request: Request) -> dict:
+    return {"limit": settings.ai_rate_limit, "remaining": ai_remaining(get_remote_address(request)),
+            "configured": bool(settings.gemini_api_key)}

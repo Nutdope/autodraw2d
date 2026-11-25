@@ -10,6 +10,7 @@ from build123d import (
     Axis,
     Box,
     BuildPart,
+    CounterBoreHole,
     Cylinder,
     GeomType,
     Hole,
@@ -75,9 +76,22 @@ def make_stepped_shaft():
     return shaft.part
 
 
+def make_base_plate():
+    """100x60x12 plate: 2x Ø9 THRU with Ø15x4 counterbore, Ø20x8 blind pocket, R5 corners."""
+    with BuildPart() as plate:
+        Box(100, 60, 12, align=(Align.MIN, Align.MIN, Align.MIN))
+        with Locations((20, 30, 12), (80, 30, 12)):
+            CounterBoreHole(radius=4.5, counter_bore_radius=7.5, counter_bore_depth=4)
+        with Locations((50, 30, 12)):
+            Hole(radius=10, depth=8)
+        fillet(plate.edges().filter_by(Axis.Z), radius=5)
+    return plate.part
+
+
 BUILDERS = {
     "mounting_bracket": make_mounting_bracket,
     "stepped_shaft": make_stepped_shaft,
+    "base_plate": make_base_plate,
 }
 
 

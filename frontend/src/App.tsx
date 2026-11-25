@@ -4,6 +4,7 @@ import { Sidebar } from "./components/sidebar/Sidebar";
 import { TopToolbar } from "./components/toolbar/TopToolbar";
 import { Toasts } from "./components/ui/Toasts";
 import { useStore } from "./state/store";
+import { useAnnotationSync } from "./state/useAnnotationSync";
 import { useLayoutSync } from "./state/useLayoutSync";
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
     init();
   }, [init]);
   useLayoutSync();
+  useAnnotationSync();
 
   return (
     <div className="flex h-screen flex-col">

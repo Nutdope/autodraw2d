@@ -1,0 +1,173 @@
+{
+ "views": [
+  "front",
+  "left"
+ ],
+ "dimensions": [
+  {
+   "type": "linear",
+   "id": "AL1",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 0.0,
+   "x2": 80.0,
+   "y2": 0.0,
+   "orientation": "horizontal",
+   "offset_mm": 15.0,
+   "offset_from": "edge",
+   "value_mm": 80.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL2",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 60.0,
+   "x2": 0.0,
+   "y2": 0.0,
+   "orientation": "vertical",
+   "offset_mm": -15.0,
+   "offset_from": "edge",
+   "value_mm": 60.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL5",
+   "view": "front",
+   "x1": 0.0,
+   "y1": 60.0,
+   "x2": 20.0,
+   "y2": 20.0,
+   "orientation": "vertical",
+   "offset_mm": -8.0,
+   "offset_from": "edge",
+   "value_mm": 40.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL6",
+   "view": "front",
+   "x1": 80.0,
+   "y1": 0.0,
+   "x2": 80.0,
+   "y2": 52.0,
+   "orientation": "vertical",
+   "offset_mm": 8.0,
+   "offset_from": "edge",
+   "value_mm": 52.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL7",
+   "view": "front",
+   "x1": 80.0,
+   "y1": 52.0,
+   "x2": 80.0,
+   "y2": 60.0,
+   "orientation": "vertical",
+   "offset_mm": 15.0,
+   "offset_from": "edge",
+   "value_mm": 8.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL8",
+   "view": "left",
+   "x1": 0.0,
+   "y1": 0.0,
+   "x2": 50.0,
+   "y2": 0.0,
+   "orientation": "horizontal",
+   "offset_mm": 15.0,
+   "offset_from": "edge",
+   "value_mm": 50.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL9",
+   "view": "left",
+   "x1": 0.0,
+   "y1": 60.0,
+   "x2": 8.0,
+   "y2": 46.0,
+   "orientation": "horizontal",
+   "offset_mm": -8.0,
+   "offset_from": "edge",
+   "value_mm": 8.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "linear",
+   "id": "AL10",
+   "view": "left",
+   "x1": 8.0,
+   "y1": 46.0,
+   "x2": 50.0,
+   "y2": 60.0,
+   "orientation": "horizontal",
+   "offset_mm": -15.0,
+   "offset_from": "edge",
+   "value_mm": 42.0,
+   "prefix": "",
+   "tolerance_text": null,
+   "text_shift_mm": 0.0
+  },
+  {
+   "type": "diameter",
+   "id": "AD1",
+   "view": "front",
+   "cx": 60.0,
+   "cy": 20.0,
+   "radius": 5.0,
+   "leader_angle_deg": 45.0,
+   "leader_len_mm": 10.0,
+   "inside": false,
+   "label_text": "2x Ø10.0 THRU",
+   "feature_ids": [
+    "F1",
+    "F2"
+   ]
+  },
+  {
+   "type": "radius",
+   "id": "AR1",
+   "view": "left",
+   "cx": 14.0,
+   "cy": 46.0,
+   "radius": 6.0,
+   "leader_angle_deg": 225.0,
+   "leader_len_mm": 12.0,
+   "inside": true,
+   "label_text": "R6.0",
+   "feature_ids": [
+    "F7"
+   ]
+  }
+ ],
+ "ai_notes": [
+  "WORK TO DIMENSIONS",
+  "REMOVE ALL BURRS AND SHARP EDGES"
+ ],
+ "model": "gemini-3.5-flash",
+ "rejected": 2
+}

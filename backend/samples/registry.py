@@ -47,6 +47,19 @@ SAMPLE_PARTS: dict[str, SamplePart] = {
             "bosses": [16.0, 20.0, 24.0, 30.0],
         },
     ),
+    "base_plate": SamplePart(
+        id="base_plate",
+        name="Base Plate",
+        filename="base_plate.step",
+        description="100x60x12 plate, 2x Ø9 THRU with Ø15 counterbore, Ø20x8 blind pocket, 4x R5 corners.",
+        default_material="Al 6061-T6",
+        expect={
+            "size": (100.0, 60.0, 12.0),
+            "holes": [(9.0, 2, True), (20.0, 1, False)],
+            "convex_radii": [5.0],
+            "labels": ["2x Ø9.0 THRU, CBORE Ø15.0 DEPTH 4.0", "Ø20.0 DEPTH 8.0", "4x R5.0"],
+        },
+    ),
 }
 
 

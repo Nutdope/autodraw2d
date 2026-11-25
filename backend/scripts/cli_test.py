@@ -73,6 +73,28 @@ def check_projection_extents(a: PartAnalysis, ck: Checker) -> None:
         ck.check(bool(v.visible.primitives), f"{a.part_name}/{name}: no visible edges")
 
 
+def _svg_arc_center(p0, p1, r, large, sweep):
+    """Centre implied by SVG arc flags (SVG 1.1 implementation notes F.6.5)."""
+    (x1, y1), (x2, y2) = p0, p1
+    dx, dy = (x1 - x2) / 2, (y1 - y2) / 2
+    d2 = dx * dx + dy * dy
+    f = math.sqrt(max(0.0, (r * r - d2) / d2)) if d2 > 0 else 0.0
+    if large == sweep:
+        f = -f
+    return (f * dy + (x1 + x2) / 2, -f * dx + (y1 + y2) / 2)
+
+
+def check_arc_flags(a: PartAnalysis, ck: Checker) -> None:
+    """Every arc's SVG flags must reproduce its true centre (else it renders mirrored)."""
+    for name, v in a.views.items():
+        for layer in ("visible", "hidden", "tangent", "tangent_hidden"):
+            for p in getattr(v, layer).primitives:
+                if p.type == "arc":
+                    c = _svg_arc_center(p.p0, p.p1, p.r, p.large, p.sweep)
+                    ck.check(math.dist(c, p.c) < 1e-3,
+                             f"{a.part_name}/{name}: arc flags give centre {c}, expected {p.c}")
+
+
 def check_sample_features(a: PartAnalysis, part_id: str, ck: Checker) -> None:
     exp = SAMPLE_PARTS[part_id].expect
     g = a.geometry
@@ -87,6 +109,12 @@ def check_sample_features(a: PartAnalysis, part_id: str, ck: Checker) -> None:
     if "bosses" in exp:
         got = sorted(round(f.diameter, 3) for f in g.features if f.kind == "boss")
         ck.check(got == sorted(exp["bosses"]), f"{part_id}: bosses {got} != {exp['bosses']}")
+    for r in exp.get("convex_radii", []):
+        ck.check(any(f.kind == "convex_arc" and abs(f.radius - r) < 1e-3 for f in g.features),
+                 f"{part_id}: missing convex R{r}")
+    labels = {fg.label for fg in g.feature_groups}
+    for lbl in exp.get("labels", []):
+        ck.check(lbl in labels, f"{part_id}: expected callout '{lbl}', got {sorted(labels)}")
     for r in exp.get("concave_radii", []):
         ck.check(any(f.kind == "concave_arc" and abs(f.radius - r) < 1e-3 for f in g.features),
                  f"{part_id}: missing concave R{r}")
@@ -154,6 +182,7 @@ def run_part(step: Path, part_id: str | None, configs: list[SheetConfig], ck: Ch
     (OUT_DIR / f"{step.stem}.analysis.json").write_text(a.model_dump_json(indent=1), encoding="utf-8")
 
     check_projection_extents(a, ck)
+    check_arc_flags(a, ck)
     if part_id:
         check_sample_features(a, part_id, ck)
 

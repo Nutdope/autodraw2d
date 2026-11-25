@@ -16,6 +16,8 @@ export function TopToolbar() {
   const loadSample = useStore((s) => s.loadSample);
   const uploadFile = useStore((s) => s.uploadFile);
   const toast = useStore((s) => s.toast);
+  const autoDimensionAI = useStore((s) => s.autoDimensionAI);
+  const aiPending = useStore((s) => s.aiPending);
   const fileRef = useRef<HTMLInputElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -99,14 +101,21 @@ export function TopToolbar() {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={!part}
-          onClick={() => toast("AI auto-dimensioning is coming in the next update.", "info")}
+          disabled={!part || aiPending}
+          onClick={() => autoDimensionAI()}
+          title="Let Gemini lay out a complete dimension set (geometry is always measured by the CAD kernel)"
           className="flex items-center gap-1.5 rounded-md border border-violet-500/50 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-40"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
-            <path d="M10 1l1.8 4.7L16.5 7.5l-4.7 1.8L10 14l-1.8-4.7L3.5 7.5l4.7-1.8zM15.5 12l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" />
-          </svg>
-          <span className="hidden whitespace-nowrap md:inline">Auto-Dimension (AI)</span>
+          {aiPending ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-300 border-t-transparent" />
+          ) : (
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
+              <path d="M10 1l1.8 4.7L16.5 7.5l-4.7 1.8L10 14l-1.8-4.7L3.5 7.5l4.7-1.8zM15.5 12l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" />
+            </svg>
+          )}
+          <span className="hidden whitespace-nowrap md:inline">
+            {aiPending ? "Dimensioning…" : "Auto-Dimension (AI)"}
+          </span>
           <span className="md:hidden">AI</span>
         </button>
         <div ref={exportRef} className="relative">

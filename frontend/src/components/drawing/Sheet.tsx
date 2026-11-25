@@ -1,11 +1,13 @@
 import { forwardRef } from "react";
 import type { Part, SheetLayout } from "../../api/types";
 import { toleranceText, useStore } from "../../state/store";
+import { DimensionLayer, NotesBlock } from "./Dimensions";
 import { INK, lineWeights } from "./lineStyles";
 import { TitleBlock } from "./TitleBlock";
 import { ViewGroup } from "./ViewGroup";
 
 const FONT = "Arial, Helvetica, sans-serif";
+const NO_NOTES: string[] = []; // stable reference: zustand selectors must not allocate
 
 interface Props {
   part: Part;
@@ -18,6 +20,7 @@ export const Sheet = forwardRef<SVGSVGElement, Props>(function Sheet({ part, lay
   const display = useStore((s) => s.display);
   const title = useStore((s) => s.title);
   const tol = useStore((s) => toleranceText(s.tolerance, s.customTolerance));
+  const notes = useStore((s) => s.annotations?.notes ?? NO_NOTES);
 
   const W = layout.page_width;
   const H = layout.page_height;
@@ -115,6 +118,9 @@ export const Sheet = forwardRef<SVGSVGElement, Props>(function Sheet({ part, lay
             {`${p.view.toUpperCase()} (${p.scale_label})`}
           </text>
         ))}
+
+      <DimensionLayer part={part} layout={layout} thin={thin} />
+      <NotesBlock layout={layout} notes={notes} />
 
       <TitleBlock rect={layout.title_block} layout={layout} fields={title} tolerance={tol} thick={thick} thin={thin} />
     </svg>

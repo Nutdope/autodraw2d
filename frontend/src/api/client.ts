@@ -1,4 +1,4 @@
-import type { Part, Sample, SheetConfig, SheetLayout } from "./types";
+import type { AnnotateRequest, AnnotationSet, Part, Sample, SheetConfig, SheetLayout } from "./types";
 
 export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -44,6 +44,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cfg),
       signal,
+    }),
+  annotate: (partId: string, req: AnnotateRequest) =>
+    request<AnnotationSet>(`/api/parts/${partId}/annotate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
     }),
   meshUrl: (part: Part) => `${API_URL}${part.mesh_url}`,
 };

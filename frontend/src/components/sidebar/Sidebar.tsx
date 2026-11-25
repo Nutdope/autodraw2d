@@ -71,6 +71,48 @@ function PartInfo() {
   );
 }
 
+const SOURCE_LABEL: Record<string, { text: string; cls: string }> = {
+  ai: { text: "AI · Gemini", cls: "bg-violet-500/15 text-violet-300" },
+  ai_cached: { text: "AI · cached", cls: "bg-violet-500/15 text-violet-300" },
+  precomputed: { text: "AI · pre-computed", cls: "bg-violet-500/15 text-violet-300" },
+  deterministic: { text: "Rule-based", cls: "bg-emerald-500/15 text-emerald-300" },
+};
+
+function AnnotationStatus() {
+  const ann = useStore((s) => s.annotations);
+  const overrides = useStore((s) => s.overrides);
+  const resetOverride = useStore((s) => s.resetOverride);
+  const aiPending = useStore((s) => s.aiPending);
+  const autoDimensionAI = useStore((s) => s.autoDimensionAI);
+  if (aiPending) return <p className="text-xs text-violet-300">Gemini is laying out dimensions…</p>;
+  if (!ann) return null;
+  const src = SOURCE_LABEL[ann.source];
+  const moved = Object.keys(overrides).length;
+  return (
+    <div className="space-y-2 rounded-md border border-slate-800 bg-slate-900/60 p-2.5 text-xs">
+      <div className="flex items-center gap-2">
+        <span className={`rounded px-1.5 py-0.5 font-medium ${src.cls}`}>{src.text}</span>
+        <span className="text-slate-400">{ann.dimensions.length} dimensions</span>
+        {ann.rejected > 0 && (
+          <span className="text-slate-500" title="AI primitives that failed geometric validation were dropped">
+            · {ann.rejected} rejected
+          </span>
+        )}
+      </div>
+      {ann.mode === "full" && ann.source === "deterministic" && (
+        <button type="button" onClick={() => autoDimensionAI()} className="text-violet-300 hover:text-violet-200">
+          ✦ Run AI layout for these views
+        </button>
+      )}
+      {moved > 0 && (
+        <button type="button" onClick={() => resetOverride()} className="block text-sky-300 hover:text-sky-200">
+          Reset {moved} moved label{moved === 1 ? "" : "s"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const sheet = useStore((s) => s.sheet);
   const setSheet = useStore((s) => s.setSheet);
@@ -163,7 +205,7 @@ export function Sidebar() {
       </Section>
 
       <Section title="Annotations">
-        <Field label="Dimensioning mode" hint="Dimensions are drawn by the auto-dimensioner (next milestone).">
+        <Field label="Dimensioning mode" hint="Drag any dimension text to move it · double-click to reset">
           <Select<DimensionMode>
             value={dimensionMode}
             onChange={setDimensionMode}
@@ -175,6 +217,7 @@ export function Sidebar() {
             ]}
           />
         </Field>
+        <AnnotationStatus />
         <Field label="General tolerance">
           <Select<Tolerance>
             value={tolerance}

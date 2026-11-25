@@ -122,6 +122,32 @@ def _point_in_material(solids: list[TopoDS_Shape], p: vec.Vec3, tol: float) -> b
     return False
 
 
+def _perpendicular(d: vec.Vec3) -> tuple[vec.Vec3, vec.Vec3]:
+    helper = (1.0, 0.0, 0.0) if abs(d[0]) < 0.9 else (0.0, 1.0, 0.0)
+    u = vec.normalize(vec.cross(d, helper))
+    return u, vec.cross(d, u)
+
+
+def _end_open(solids: list[TopoDS_Shape], end: vec.Vec3, outward: vec.Vec3, r: float, eps: float) -> bool:
+    """Is this end of a hole open to free space (vs. a floor)?
+
+    Probes are offset 0.9·r from the axis and stepped outward up to 0.65·r:
+    * flat bottom / counterbore floor -> material right behind the end  -> closed
+    * 118° drill point                -> cone wall within 0.06·r        -> closed
+    * through hole                    -> free space all the way         -> open
+    Probing ON the axis would be fooled by a smaller coaxial hole (counterbore)
+    or by a drill-point cone, and a single deep probe overshoots thin floors.
+    """
+    u, v = _perpendicular(outward)
+    depths = [eps + (0.65 * r) * k / 5 for k in range(6)]
+    for radial in (u, v, vec.scale(u, -1), vec.scale(v, -1)):
+        base = vec.add(end, vec.scale(radial, 0.9 * r))
+        for t in depths:
+            if _point_in_material(solids, vec.add(base, vec.scale(outward, t)), eps / 10):
+                return False
+    return True
+
+
 def _axis_label(d: vec.Vec3) -> str | None:
     for i, name in enumerate("XYZ"):
         if abs(abs(d[i]) - 1.0) < 1e-6:
@@ -155,13 +181,8 @@ def extract_features(shape: TopoDS_Shape, part_size: float) -> list[CylinderFeat
 
         through = None
         if kind == "hole":
-            # Probe just past each end on the axis. Beyond a THRU hole there is air
-            # on both sides; beyond a blind hole's bottom there is material.
-            # 0.65·r clears a standard 118° drill-point cone.
-            probe = 0.65 * acc.radius + eps
-            through = not (
-                _point_in_material(solids, vec.sub(start, vec.scale(acc.axis, probe)), eps / 10)
-                or _point_in_material(solids, vec.add(end, vec.scale(acc.axis, probe)), eps / 10)
+            through = _end_open(solids, start, vec.scale(acc.axis, -1), acc.radius, eps) and _end_open(
+                solids, end, acc.axis, acc.radius, eps
             )
 
         raw.append((kind, acc, start, end, center, through, full))
@@ -191,10 +212,44 @@ def extract_features(shape: TopoDS_Shape, part_size: float) -> list[CylinderFeat
     return features
 
 
+def _coaxial(a: CylinderFeature, b: CylinderFeature) -> bool:
+    if abs(vec.dot(a.axis, b.axis)) < 0.9999:
+        return False
+    rel = vec.sub(b.center, a.center)
+    perp = vec.sub(rel, vec.scale(a.axis, vec.dot(rel, a.axis)))
+    return vec.norm(perp) < 1e-3
+
+
+def find_counterbores(features: list[CylinderFeature]) -> dict[str, CylinderFeature]:
+    """Map small-hole id -> its counterbore (a larger, blind, coaxial hole sharing an end)."""
+    holes = [f for f in features if f.kind == "hole"]
+    out: dict[str, CylinderFeature] = {}
+    for big in holes:
+        if big.through:
+            continue
+        for small in holes:
+            if small.radius >= big.radius - 1e-6 or small.id in out or not _coaxial(big, small):
+                continue
+            ends_b, ends_s = (big.start, big.end), (small.start, small.end)
+            if any(vec.norm(vec.sub(p, q)) < 1e-3 for p in ends_b for q in ends_s):
+                out[small.id] = big
+    return out
+
+
 def group_features(features: list[CylinderFeature]) -> list[FeatureGroup]:
+    cbores = find_counterbores(features)
+    cbore_ids = {b.id for b in cbores.values()}
     buckets: dict[tuple, list[CylinderFeature]] = defaultdict(list)
     for f in features:
+        if f.id in cbore_ids:
+            continue  # reported as part of the hole it counterbores
         if f.kind == "hole":
+            cb = cbores.get(f.id)
+            if cb is not None:
+                key = (f.kind, round(f.diameter, 3), vec.clean3(f.axis, 4), f.through,
+                       "cbore", round(cb.diameter, 3), round(cb.length, 3))
+                buckets[key].append(f)
+                continue
             depth = None if f.through else round(f.length, 3)
             key = (f.kind, round(f.diameter, 3), vec.clean3(f.axis, 4), f.through, depth)
         elif f.kind == "boss":
@@ -208,9 +263,14 @@ def group_features(features: list[CylinderFeature]) -> list[FeatureGroup]:
         f0 = members[0]
         n = len(members)
         prefix = f"{n}x " if n > 1 else ""
+        ids = [m.id for m in members]
         if f0.kind == "hole":
             tail = " THRU" if f0.through else f" DEPTH {fmt_mm(f0.length)}"
             label = f"{prefix}Ø{fmt_mm(f0.diameter)}{tail}"
+            if f0.id in cbores:
+                cb = cbores[f0.id]
+                label += f", CBORE Ø{fmt_mm(cb.diameter)} DEPTH {fmt_mm(cb.length)}"
+                ids += [cbores[m.id].id for m in members]
         elif f0.kind == "boss":
             label = f"{prefix}Ø{fmt_mm(f0.diameter)}"
         else:
@@ -224,7 +284,7 @@ def group_features(features: list[CylinderFeature]) -> list[FeatureGroup]:
                 radius=f0.radius,
                 axis=f0.axis,
                 through=f0.through,
-                feature_ids=[m.id for m in members],
+                feature_ids=ids,
             )
         )
     return groups

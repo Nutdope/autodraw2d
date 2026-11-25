@@ -1,10 +1,19 @@
 import { create } from "zustand";
 import { api, ApiError } from "../api/client";
-import type { OrthoView, Part, Sample, SheetConfig, SheetLayout } from "../api/types";
+import type {
+  AnnotationSet,
+  DimensionMode,
+  DimOverride,
+  OrthoView,
+  Part,
+  Sample,
+  SheetConfig,
+  SheetLayout,
+} from "../api/types";
 
 export const MAX_ORTHO_VIEWS = 3;
 
-export type DimensionMode = "none" | "overall" | "key" | "full";
+export type { DimensionMode };
 export type Tolerance = "ISO 2768-f" | "ISO 2768-m" | "ISO 2768-c" | "custom";
 
 export interface TitleBlockFields {
@@ -43,6 +52,9 @@ interface State {
   customTolerance: string;
   title: TitleBlockFields;
   toasts: Toast[];
+  annotations: AnnotationSet | null;
+  aiPending: boolean;
+  overrides: Record<string, DimOverride>;
 
   init: () => Promise<void>;
   loadSample: (id: string) => Promise<void>;
@@ -54,11 +66,27 @@ interface State {
   setDimensionMode: (m: DimensionMode) => void;
   setTolerance: (t: Tolerance, custom?: string) => void;
   setLayout: (l: SheetLayout | null, err?: string | null) => void;
+  runAnnotate: (useAi: boolean) => Promise<void>;
+  autoDimensionAI: () => Promise<void>;
+  setOverride: (id: string, patch: DimOverride) => void;
+  resetOverride: (id?: string) => void;
   toast: (text: string, kind?: Toast["kind"]) => void;
   dismissToast: (id: number) => void;
 }
 
 let toastSeq = 0;
+let annotateSeq = 0;
+
+const sameViews = (a: string[], b: string[]) => [...a].sort().join() === [...b].sort().join();
+
+const FALLBACK_MSG: Record<string, string> = {
+  rate_limited: "AI limit reached for now — used the built-in auto-dimensioner instead.",
+  ai_not_configured: "AI isn't configured on this server — used the built-in auto-dimensioner.",
+  ai_quota: "Gemini free-tier quota is exhausted — used the built-in auto-dimensioner.",
+  ai_error: "AI service unavailable right now — used the built-in auto-dimensioner.",
+  sample_not_precomputed:
+    "No pre-computed AI layout for this sample + view combination — showing rule-based dimensions (upload your own part for live AI).",
+};
 let initStarted = false;
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -73,6 +101,8 @@ export const useStore = create<State>((set, get) => {
       part,
       loading: null,
       layout: null,
+      annotations: null,
+      overrides: {},
       title: {
         ...s.title,
         partName: part.name,
@@ -114,6 +144,9 @@ export const useStore = create<State>((set, get) => {
       date: today(),
     },
     toasts: [],
+    annotations: null,
+    aiPending: false,
+    overrides: {},
 
     init: async () => {
       if (initStarted) return; // StrictMode double-invokes effects in dev
@@ -175,6 +208,60 @@ export const useStore = create<State>((set, get) => {
     setTolerance: (tolerance, custom) =>
       set((s) => ({ tolerance, customTolerance: custom ?? s.customTolerance })),
     setLayout: (layout, err = null) => set({ layout, layoutError: err }),
+
+    runAnnotate: async (useAi) => {
+      const { part, dimensionMode, sheet, tolerance, customTolerance } = get();
+      if (!part) return;
+      if (!useAi && get().aiPending) return; // never clobber an in-flight AI run
+      if (dimensionMode === "none" && !useAi) {
+        set({ annotations: null, overrides: {} });
+        return;
+      }
+      const seq = ++annotateSeq;
+      if (useAi) set({ aiPending: true });
+      try {
+        const res = await api.annotate(part.part_id, {
+          mode: useAi ? "full" : dimensionMode,
+          ortho_views: sheet.ortho_views,
+          use_ai: useAi,
+          tolerance: toleranceText(tolerance, customTolerance),
+        });
+        const now = get();
+        if (useAi) set({ aiPending: false });
+        if (now.part?.part_id !== part.part_id) return;
+        if (!useAi && seq !== annotateSeq) return; // a newer request superseded this one
+        if (!sameViews(res.views, now.sheet.ortho_views)) {
+          get().runAnnotate(false); // views changed while the AI was thinking
+          return;
+        }
+        set({ annotations: res, overrides: {} });
+        if (useAi) {
+          if (res.source === "ai")
+            get().toast(`AI placed ${res.dimensions.length} dimensions (${res.model})`, "success");
+          else if (res.source !== "deterministic")
+            get().toast(`Loaded cached AI dimensions (${res.dimensions.length})`, "success");
+          else get().toast(FALLBACK_MSG[res.fallback_reason ?? ""] ?? "Used the built-in auto-dimensioner.", "info");
+        }
+      } catch (e) {
+        if (useAi) set({ aiPending: false });
+        get().toast(e instanceof ApiError ? e.message : String(e), "error");
+      }
+    },
+
+    autoDimensionAI: async () => {
+      set({ dimensionMode: "full" });
+      await get().runAnnotate(true);
+    },
+
+    setOverride: (id, patch) =>
+      set((s) => ({ overrides: { ...s.overrides, [id]: { ...s.overrides[id], ...patch } } })),
+    resetOverride: (id) =>
+      set((s) => {
+        if (!id) return { overrides: {} };
+        const next = { ...s.overrides };
+        delete next[id];
+        return { overrides: next };
+      }),
 
     toast: (text, kind = "info") => {
       const id = ++toastSeq;
