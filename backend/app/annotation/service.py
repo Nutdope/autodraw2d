@@ -34,6 +34,8 @@ from .validate import validate_ai
 log = logging.getLogger("autodraw.annotation")
 PRECOMPUTED_DIR = PARTS_DIR.parent / "annotations"
 _AI_LIMIT = parse(settings.ai_rate_limit)
+_AI_DAILY = parse(settings.ai_daily_limit)
+_GLOBAL = "all-visitors"
 MIN_AI_COVERAGE = 0.5  # AI must keep at least half as many linear dims as the baseline
 
 
@@ -136,8 +138,14 @@ def annotate(
         return _deterministic(analysis, req, "ai_not_requested")
     if not settings.gemini_api_key:
         return _deterministic(analysis, req, "ai_not_configured")
-    if not limiter.limiter.hit(_AI_LIMIT, "ai-annotate", client_key):
+    # Test both windows before charging either, so a refusal never burns quota.
+    lim = limiter.limiter
+    if not lim.test(_AI_LIMIT, "ai-annotate", client_key):
         return _deterministic(analysis, req, "rate_limited")
+    if not lim.test(_AI_DAILY, "ai-annotate", _GLOBAL):
+        return _deterministic(analysis, req, "daily_cap")
+    lim.hit(_AI_LIMIT, "ai-annotate", client_key)
+    lim.hit(_AI_DAILY, "ai-annotate", _GLOBAL)
 
     try:
         result = run_ai(analysis, views)
@@ -152,9 +160,10 @@ def annotate(
     return _from_cache(result, req, "ai")
 
 
-def ai_remaining(client_key: str) -> int:
-    stats = limiter.limiter.get_window_stats(_AI_LIMIT, "ai-annotate", client_key)
-    return int(stats.remaining)
+def ai_remaining(client_key: str) -> dict:
+    you = limiter.limiter.get_window_stats(_AI_LIMIT, "ai-annotate", client_key)
+    everyone = limiter.limiter.get_window_stats(_AI_DAILY, "ai-annotate", _GLOBAL)
+    return {"you": int(you.remaining), "today_all_visitors": int(everyone.remaining)}
 
 
 def dump_precomputed(sample_id: str, result: CachedAI) -> Path:

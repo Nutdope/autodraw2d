@@ -123,5 +123,6 @@ def annotate_part(part_id: str, req: AnnotateRequest, request: Request) -> Annot
 
 @router.get("/ai/quota")
 def ai_quota(request: Request) -> dict:
-    return {"limit": settings.ai_rate_limit, "remaining": ai_remaining(get_remote_address(request)),
+    return {"per_ip_limit": settings.ai_rate_limit, "daily_limit": settings.ai_daily_limit,
+            "remaining": ai_remaining(get_remote_address(request)),
             "configured": bool(settings.gemini_api_key)}

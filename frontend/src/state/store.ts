@@ -81,6 +81,7 @@ const sameViews = (a: string[], b: string[]) => [...a].sort().join() === [...b].
 
 const FALLBACK_MSG: Record<string, string> = {
   rate_limited: "AI limit reached for now — used the built-in auto-dimensioner instead.",
+  daily_cap: "Today's shared AI budget is used up — used the built-in auto-dimensioner instead.",
   ai_not_configured: "AI isn't configured on this server — used the built-in auto-dimensioner.",
   ai_quota: "Gemini free-tier quota is exhausted — used the built-in auto-dimensioner.",
   ai_error: "AI service unavailable right now — used the built-in auto-dimensioner.",

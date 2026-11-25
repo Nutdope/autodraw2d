@@ -7,11 +7,17 @@ snaps coordinates back onto anchors and recomputes every value/label.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Literal
 
 from pydantic import BaseModel
 
 from ..core.config import settings
+
+log = logging.getLogger("autodraw.gemini")
+# overloaded / retired / quota-exhausted -> next model in the list
+RETRYABLE = ("503", "UNAVAILABLE", "404", "NOT_FOUND", "429", "RESOURCE_EXHAUSTED")
 from ..geometry.features import fmt_mm
 from ..geometry.models import PartAnalysis
 from .context import ViewCtx
@@ -122,7 +128,11 @@ def build_payload(analysis: PartAnalysis, ctx: dict[str, ViewCtx], baseline: lis
 
 
 def call_gemini(payload: dict) -> tuple[AIAnnotation, str]:
-    """Returns (parsed annotation, model used). Falls through the model list on 503/404."""
+    """Returns (parsed annotation, model used).
+
+    Falls through the model list when a model is overloaded (503), retired (404) or out of
+    quota (429). Free-tier quotas are per model, so a lighter model often still has calls left.
+    """
     from google import genai
     from google.genai import types
 
@@ -135,18 +145,29 @@ def call_gemini(payload: dict) -> tuple[AIAnnotation, str]:
     )
     models = list(dict.fromkeys([settings.gemini_model, *settings.gemini_fallback_models]))
     last_exc: Exception | None = None
-    for model in models:
-        try:
-            resp = client.models.generate_content(model=model, contents=contents, config=config)
-        except Exception as exc:
-            msg = str(exc)
-            if any(code in msg for code in ("503", "UNAVAILABLE", "404", "NOT_FOUND")):
+    for attempt in range(2):
+        overloaded: list[str] = []
+        for model in models:
+            try:
+                resp = client.models.generate_content(model=model, contents=contents, config=config)
+            except Exception as exc:
+                msg = str(exc)
+                if not any(code in msg for code in RETRYABLE):
+                    raise
+                log.info("Gemini model %s unavailable (%s), trying next", model, msg[:60])
                 last_exc = exc
-                continue  # overloaded or retired model -> try the next one
-            raise
-        if isinstance(resp.parsed, AIAnnotation):
-            return resp.parsed, model
-        if not resp.text:
-            raise RuntimeError("empty response from Gemini")
-        return AIAnnotation.model_validate_json(resp.text), model
+                if "503" in msg or "UNAVAILABLE" in msg:
+                    overloaded.append(model)
+                continue
+            if isinstance(resp.parsed, AIAnnotation):
+                return resp.parsed, model
+            if not resp.text:
+                raise RuntimeError("empty response from Gemini")
+            return AIAnnotation.model_validate_json(resp.text), model
+        # Overload spikes are short: one more pass over just the overloaded models.
+        if attempt == 0 and overloaded:
+            models = overloaded
+            time.sleep(4)
+        else:
+            break
     raise last_exc or RuntimeError("no Gemini model available")
