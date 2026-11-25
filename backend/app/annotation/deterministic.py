@@ -6,7 +6,7 @@ Rules of thumb it follows (ISO 129-1 / ASME Y14.5 style):
 * shafts: Ø across each step (on the part) + chain of step lengths
 * fillets/rounds: radius callout where the arc is seen true
 * overall L × W × H outermost, never duplicated
-* dimension lines stack 8 / 15 / 22 mm from the view, inside the 25 mm clearance
+* dimension lines stack 7 / 13 / 19 mm from the view, inside the 25 mm clearance
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from ..geometry.models import PartAnalysis
 from .context import ViewCtx, build_contexts
 from .models import CircleDim, DimensionMode, LinearDim
 
-FIRST_LEVEL = 8.0
-LEVEL_STEP = 7.0
+FIRST_LEVEL = 7.0
+LEVEL_STEP = 6.0  # 7 / 13 / 19 mm: outermost text (+~4.5 mm) still clears the 25 mm view gap
 MAX_LEVELS = 3
 MAX_POSITION_DIMS = 4
 OPPOSITE = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}

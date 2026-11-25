@@ -10,6 +10,7 @@ Exits non-zero if any deterministic check fails.
 from __future__ import annotations
 
 import argparse
+import io
 import itertools
 import math
 import sys
@@ -20,7 +21,10 @@ from app.geometry.models import PartAnalysis
 from app.layout import SheetConfig, SheetLayout, compute_layout
 from app.layout.placement import _R
 from app.pipeline import analyze_part
-from app.rendering.svg_sheet import render_sheet_svg
+from app.annotation.deterministic import base_notes, deterministic_dimensions
+from app.export.builder import build_sheet
+from app.export.models import LAYERS, ExportRequest, TitleFields
+from app.export.writers import to_dxf, to_pdf, to_svg
 from samples import SAMPLE_PARTS, sample_path
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "out"
@@ -163,6 +167,37 @@ def check_layout(a: PartAnalysis, lay: SheetLayout, tag: str, ck: Checker) -> No
 
 
 # ---------------------------------------------------------------------------
+# Export checks (same code path as POST /api/parts/{id}/export)
+# ---------------------------------------------------------------------------
+def export_all(a: PartAnalysis, lay: SheetLayout, cfg: SheetConfig, tag: str, ck: Checker) -> None:
+    import ezdxf
+
+    dims = deterministic_dimensions(a, list(cfg.ortho_views), "key")
+    title = a.part_name.replace("_", " ").title()
+    req = ExportRequest(format="svg", sheet=cfg, dimensions=dims, notes=base_notes("key", "ISO 2768-m"),
+                        title=TitleFields(partName=title, drawingNumber=f"AD-{tag[:20].upper()}", revision="A"))
+    model = build_sheet(a, lay, req)
+
+    svg = to_svg(model, title)
+    (OUT_DIR / f"{tag}.svg").write_text(svg, encoding="utf-8")
+    ck.check(svg.count("<text") >= len(dims), f"{tag}: SVG is missing dimension text")
+
+    dxf = to_dxf(model)
+    (OUT_DIR / f"{tag}.dxf").write_bytes(dxf)
+    doc = ezdxf.read(io.StringIO(dxf.decode("utf-8")))
+    ck.check(not doc.audit().has_errors, f"{tag}: DXF audit errors")
+    used = {e.dxf.layer for e in doc.modelspace()}
+    for layer in ("VISIBLE", "DIMENSIONS", "BORDER", "TITLE_BLOCK", "CENTERLINES"):
+        ck.check(layer in used, f"{tag}: DXF layer {layer} is empty")
+    ck.check(set(LAYERS) <= {ly.dxf.name for ly in doc.layers}, f"{tag}: DXF missing layer definitions")
+    ck.check(doc.layers.get("HIDDEN").dxf.linetype == "DASHED", f"{tag}: HIDDEN layer not DASHED")
+
+    pdf = to_pdf(svg)
+    (OUT_DIR / f"{tag}.pdf").write_bytes(pdf)
+    ck.check(pdf.startswith(b"%PDF") and len(pdf) > 2000, f"{tag}: PDF looks empty")
+
+
+# ---------------------------------------------------------------------------
 def print_summary(a: PartAnalysis) -> None:
     g = a.geometry
     print(f"  size      {g.size[0]:.2f} x {g.size[1]:.2f} x {g.size[2]:.2f} mm   "
@@ -190,9 +225,7 @@ def run_part(step: Path, part_id: str | None, configs: list[SheetConfig], ck: Ch
         tag = f"{step.stem}__{cfg.page_format}_{cfg.orientation[:4]}_{cfg.standard}"
         lay = compute_layout(a.views, cfg)
         check_layout(a, lay, tag, ck)
-        svg = render_sheet_svg(lay, a.views, title=step.stem.replace("_", " ").upper())
-        out = OUT_DIR / f"{tag}.svg"
-        out.write_text(svg, encoding="utf-8")
+        export_all(a, lay, cfg, tag, ck)
         views = ", ".join(f"{p.view}@({p.x_offset:.0f},{p.y_offset:.0f})" for p in lay.placements)
         print(f"  layout    {tag}: scale {lay.scale_label} fits={lay.fits}  {views}")
         for w in lay.warnings:

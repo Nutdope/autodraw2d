@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { useStore } from "../../state/store";
+import { useStore, type ExportFormat } from "../../state/store";
 
 const PORTFOLIO_URL = import.meta.env.VITE_PORTFOLIO_URL as string | undefined;
 
-const EXPORTS = [
-  { ext: "DXF", title: "CAD Drawing (.DXF)", hint: "Editable in SolidWorks, AutoCAD, Fusion, Inventor" },
-  { ext: "PDF", title: "Print / Share (.PDF)", hint: "Vector sheet ready for printing or review" },
-  { ext: "SVG", title: "Web / Vector (.SVG)", hint: "Scalable vector for docs & illustrations" },
+const EXPORTS: { ext: string; fmt: ExportFormat; title: string; hint: string }[] = [
+  { ext: "DXF", fmt: "dxf", title: "CAD Drawing (.DXF)", hint: "Editable in SolidWorks, AutoCAD, Fusion, Inventor" },
+  { ext: "PDF", fmt: "pdf", title: "Print / Share (.PDF)", hint: "Vector sheet ready for printing or review" },
+  { ext: "SVG", fmt: "svg", title: "Web / Vector (.SVG)", hint: "Scalable vector for docs & illustrations" },
 ];
 
 export function TopToolbar() {
@@ -15,9 +15,11 @@ export function TopToolbar() {
   const loading = useStore((s) => s.loading);
   const loadSample = useStore((s) => s.loadSample);
   const uploadFile = useStore((s) => s.uploadFile);
-  const toast = useStore((s) => s.toast);
   const autoDimensionAI = useStore((s) => s.autoDimensionAI);
   const aiPending = useStore((s) => s.aiPending);
+  const exporting = useStore((s) => s.exporting);
+  const exportDrawing = useStore((s) => s.exportDrawing);
+  const layoutReady = useStore((s) => !!s.layout);
   const fileRef = useRef<HTMLInputElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -121,11 +123,14 @@ export function TopToolbar() {
         <div ref={exportRef} className="relative">
           <button
             type="button"
-            disabled={!part}
+            disabled={!part || !layoutReady || !!exporting}
             onClick={() => setExportOpen((o) => !o)}
             className="flex items-center gap-1.5 rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 transition hover:border-slate-500 disabled:opacity-40"
           >
-            Export
+            {exporting && (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+            )}
+            {exporting ? `Exporting ${exporting.toUpperCase()}…` : "Export"}
             <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor">
               <path d="M5 7l5 6 5-6z" />
             </svg>
@@ -138,7 +143,7 @@ export function TopToolbar() {
                   type="button"
                   onClick={() => {
                     setExportOpen(false);
-                    toast(`${x.ext} export is coming in the next update.`, "info");
+                    exportDrawing(x.fmt);
                   }}
                   className="flex w-full items-start gap-3 px-3 py-2.5 text-left transition hover:bg-slate-800"
                 >

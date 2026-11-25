@@ -23,6 +23,7 @@ class Settings:
     cache_dir: Path = Path(os.getenv("CACHE_DIR", str(BACKEND_DIR / "cache")))
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "25"))
     upload_rate_limit: str = os.getenv("UPLOAD_RATE_LIMIT", "20/hour")
+    export_rate_limit: str = os.getenv("EXPORT_RATE_LIMIT", "60/hour")
     ai_rate_limit: str = os.getenv("AI_RATE_LIMIT", "5/hour")  # per client IP
     ai_daily_limit: str = os.getenv("AI_DAILY_LIMIT", "50/day")  # all visitors combined
     memory_cache_items: int = int(os.getenv("MEMORY_CACHE_ITEMS", "24"))

@@ -29,3 +29,6 @@ frontend/.vite/
 Thumbs.db
 .idea/
 .vscode/
+
+# --- Local Claude Code tooling ------------------------------------------
+.claude/

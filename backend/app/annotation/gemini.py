@@ -69,7 +69,7 @@ HARD RULES
 PLACEMENT
 - linear.offset_mm is in PAPER mm. Horizontal: positive = above, negative = below.
   Vertical: positive = right, negative = left.
-- offset_from "edge": distance from the view's bounding-box edge on that side. Use levels 8, 15, 22
+- offset_from "edge": distance from the view's bounding-box edge on that side. Use levels 7, 13, 19
   (at most 3 per side; smaller dimensions closest to the view, overall dimensions outermost).
 - offset_from "points" with offset 0: the dimension line is drawn directly between the two points
   (use for diameters across a shaft with prefix "Ø"; otherwise prefix "none").

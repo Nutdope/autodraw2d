@@ -22,15 +22,18 @@ deterministically with OpenCascade (`build123d`); an LLM is only ever used to
 │   │   │   ├── sheet.py          ISO 216 formats, ISO 5457 frame/zones, title block, scales
 │   │   │   ├── placement.py      1st/3rd-angle arrangement, auto-fit scale, iso corner
 │   │   │   └── models.py         SheetConfig (validated input) + SheetLayout
-│   │   ├── rendering/svg_sheet.py  server-side SVG sheet (CLI preview; base of exports)
+│   │   ├── annotation/           dimensioning: deterministic rules, Gemini layout, validator, service
+│   │   ├── export/               paper-space sheet model → layered DXF / PDF / SVG writers
+│   │   ├── api/                  FastAPI routes + response schemas
+│   │   ├── services/part_store.py content-addressed part cache
+│   │   ├── core/                 settings (.env) + rate limiter
 │   │   ├── pipeline.py           STEP → PartAnalysis orchestration
-│   │   ├── api/                  (M2) FastAPI routers
-│   │   ├── annotation/           (M3) Gemini + deterministic auto-dimensioner
-│   │   └── export/               (M4) DXF / PDF / SVG
-│   ├── samples/                  built-in demo parts + generator
-│   ├── scripts/cli_test.py       Milestone 1 verification
+│   │   └── main.py               FastAPI app
+│   ├── samples/                  demo parts, generator, pre-computed AI annotations
+│   ├── scripts/                  cli_test.py (304 checks), precompute_annotations.py
+│   ├── Dockerfile
 │   └── requirements.txt
-└── frontend/                     (M2) React 18 + Vite + TS + Tailwind (→ Vercel)
+└── frontend/                     React 18 + Vite + TS + Tailwind (→ Vercel)
 ```
 
 ## Coordinate conventions
@@ -115,3 +118,52 @@ file; every sheet/view change only re-runs the layout endpoint.
 
 Milestone 1 output lands in `backend/out/`: `*.analysis.json`, `*.stl`, and one preview
 sheet `*.svg` per configuration — open the SVGs in a browser to eyeball them.
+
+## Milestone 4 — export
+
+`POST /api/parts/{id}/export` takes the sheet config, display toggles, title
+block and the **final on-screen dimensions** (drag overrides applied) and returns:
+
+| Format | Notes |
+|---|---|
+| **DXF** (R2010, mm) | CAD layers `VISIBLE` · `HIDDEN` (DASHED) · `CENTERLINES` (CENTER) · `DIMENSIONS` · `BORDER` · `TITLE_BLOCK` (+ `TANGENT`), ISO lineweights. Opens in AutoCAD, SolidWorks (import into a drawing), Fusion, Inventor. Dimensions are plain geometry + text, not associative DIMENSION entities. |
+| **PDF** | true-size vector sheet (svglib + reportlab, no native deps) |
+| **SVG** | true-size, one `<g>` per layer |
+
+All three render the same paper-space sheet model (`app/export/builder.py`), so
+they always match each other and the canvas.
+
+## Deployment
+
+### Backend → Railway / Render / Fly.io (Docker)
+
+```powershell
+docker build -t autodraw-backend ./backend
+```
+
+```powershell
+docker run -p 8000:8000 --env-file backend/.env autodraw-backend
+```
+
+On the platform: point it at `backend/Dockerfile` (root directory `backend`),
+and set these environment variables (never commit `.env`):
+
+| Variable | Example |
+|---|---|
+| `GEMINI_API_KEY` | your key (optional — without it everything falls back to rule-based dimensions) |
+| `CORS_ORIGINS` | `https://autodraw.yourdomain.com` (your Vercel URL, comma-separated list) |
+| `AI_RATE_LIMIT` / `AI_DAILY_LIMIT` | `5/hour` / `50/day` |
+| `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | see `backend/.env.example` |
+
+The platform's `$PORT` is honoured. Give the service ≥ 1 GB RAM: the OpenCascade
+kernel plus HLR on larger parts does not fit in 512 MB free tiers comfortably.
+Rate-limit counters and the part cache are in-memory / ephemeral per instance.
+
+### Frontend → Vercel
+
+Import the repo, set **Root Directory** to `frontend` (framework: Vite), and add:
+
+| Variable | Example |
+|---|---|
+| `VITE_API_URL` | `https://autodraw-api.up.railway.app` |
+| `VITE_PORTFOLIO_URL` | your portfolio URL (shows "← Back to Portfolio") |

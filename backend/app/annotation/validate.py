@@ -17,7 +17,7 @@ from .gemini import AIAnnotation
 from .models import CircleDim, LinearDim
 
 SNAP_TOL = 0.05  # mm, view-local model space
-MAX_OFFSET = 24.0  # paper mm: stay inside the 25 mm view clearance
+MAX_OFFSET = 20.0  # paper mm: line + text (~4.5 mm) must stay inside the 25 mm view clearance
 FIT_CODE = re.compile(r"^[A-Za-z]{1,2}\d{1,2}$")  # H7, h6, js9 ...
 NUM = re.compile(r"\d+(?:\.\d+)?")
 
@@ -62,7 +62,7 @@ def validate_ai(ai: AIAnnotation, analysis: PartAnalysis, ctx: dict[str, ViewCtx
         prefix = "Ø" if d.prefix == "Ø" and round(value, 3) in diameters else ""
         offset = max(-MAX_OFFSET, min(MAX_OFFSET, d.offset_mm))
         if d.offset_from == "edge" and abs(offset) < 4:
-            offset = math.copysign(8.0, offset or 1.0)
+            offset = math.copysign(7.0, offset or 1.0)
         tol = d.tolerance_text.strip() if FIT_CODE.match(d.tolerance_text.strip() or "-") else None
         dims.append(LinearDim(
             id=f"AL{i + 1}", view=d.view, x1=p1[0], y1=p1[1], x2=p2[0], y2=p2[1],

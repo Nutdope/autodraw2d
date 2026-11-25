@@ -121,8 +121,12 @@ function useLabelInteraction(id: string, onDrag: (p: Pt) => void) {
     onPointerDown: (e: React.PointerEvent<SVGGraphicsElement>) => {
       e.stopPropagation(); // don't pan the canvas
       e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
       dragging.current = true;
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* pen/touch emulation or synthetic events: dragging still works without capture */
+      }
     },
     onPointerMove: (e: React.PointerEvent<SVGGraphicsElement>) => {
       if (dragging.current) onDrag(paperPoint(e, e.currentTarget));
@@ -249,20 +253,23 @@ function Circle({
 }
 
 // ---------------------------------------------------------------------------
-export function DimensionLayer({ part, layout, thin }: { part: Part; layout: SheetLayout; thin: number }) {
-  const annotations = useStore((s) => s.annotations);
-  const overrides = useStore((s) => s.overrides);
-  const snapOn = useStore((s) => s.display.grid);
-  if (!annotations) return null;
+type Annotated = { dimensions: Dimension[] };
 
-  const geoOf = (d: Dimension): Geo | null => {
-    const placement = layout.placements.find((p) => p.view === d.view);
-    const v = part.views[d.view];
-    return placement && v ? { placement, w: v.width, h: v.height } : null;
-  };
+function geoFor(part: Part, layout: SheetLayout, d: Dimension): Geo | null {
+  const placement = layout.placements.find((p) => p.view === d.view);
+  const v = part.views[d.view];
+  return placement && v ? { placement, w: v.width, h: v.height } : null;
+}
 
-  // Collision pass: linear labels are fixed; each callout's leader grows until its
-  // label clears every label placed before it (user-dragged callouts are left alone).
+/** Collision pass: linear labels are fixed; each callout's leader grows until its
+ *  label clears every label placed before it (user-dragged callouts are left alone). */
+function autoLeaderLengths(
+  annotations: Annotated,
+  overrides: Record<string, DimOverride>,
+  part: Part,
+  layout: SheetLayout,
+): Record<string, number> {
+  const geoOf = (d: Dimension) => geoFor(part, layout, d);
   const boxes: Box[] = [];
   const autoLen: Record<string, number> = {};
   for (const d of annotations.dimensions) {
@@ -284,6 +291,37 @@ export function DimensionLayer({ part, layout, thin }: { part: Part; layout: She
     }
     boxes.push(box);
   }
+  return autoLen;
+}
+
+/** Final dimensions exactly as drawn (drag overrides + auto leader lengths) — what export receives. */
+export function resolveDimensions(
+  annotations: Annotated,
+  overrides: Record<string, DimOverride>,
+  part: Part,
+  layout: SheetLayout,
+): Dimension[] {
+  const autoLen = autoLeaderLengths(annotations, overrides, part, layout);
+  return annotations.dimensions.map((d) => {
+    const ov = overrides[d.id] ?? {};
+    if (d.type === "linear") {
+      return { ...d, offset_mm: ov.offset_mm ?? d.offset_mm, text_shift_mm: ov.text_shift_mm ?? d.text_shift_mm };
+    }
+    return {
+      ...d,
+      leader_angle_deg: ov.leader_angle_deg ?? d.leader_angle_deg,
+      leader_len_mm: ov.leader_len_mm ?? autoLen[d.id] ?? d.leader_len_mm,
+    };
+  });
+}
+
+export function DimensionLayer({ part, layout, thin }: { part: Part; layout: SheetLayout; thin: number }) {
+  const annotations = useStore((s) => s.annotations);
+  const overrides = useStore((s) => s.overrides);
+  const snapOn = useStore((s) => s.display.grid);
+  if (!annotations) return null;
+  const geoOf = (d: Dimension) => geoFor(part, layout, d);
+  const autoLen = autoLeaderLengths(annotations, overrides, part, layout);
 
   return (
     <g data-layer="dimensions">

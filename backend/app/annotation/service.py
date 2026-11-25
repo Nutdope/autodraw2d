@@ -13,6 +13,7 @@ Resolution order for mode "full":
 from __future__ import annotations
 
 import json
+import math
 import logging
 from pathlib import Path
 from typing import Optional
@@ -29,7 +30,7 @@ from .context import build_contexts
 from .deterministic import base_notes, deterministic_dimensions
 from .gemini import build_payload, call_gemini
 from .models import AnnotateRequest, AnnotationSet, CircleDim, Dimension
-from .validate import validate_ai
+from .validate import MAX_OFFSET, validate_ai
 
 log = logging.getLogger("autodraw.annotation")
 PRECOMPUTED_DIR = PARTS_DIR.parent / "annotations"
@@ -90,10 +91,20 @@ def run_ai(analysis: PartAnalysis, views: list[str]) -> CachedAI:
     return CachedAI(views=views, dimensions=dims, ai_notes=notes, model=model, rejected=rejected)
 
 
+def _clamp_offsets(dims: list) -> list:
+    """Older caches used levels up to 22 mm; keep every line + text inside the view gap."""
+    out = []
+    for d in dims:
+        if d.type == "linear" and d.offset_from == "edge" and abs(d.offset_mm) > MAX_OFFSET:
+            d = d.model_copy(update={"offset_mm": math.copysign(MAX_OFFSET - 1, d.offset_mm)})
+        out.append(d)
+    return out
+
+
 def _from_cache(c: CachedAI, req: AnnotateRequest, source: str) -> AnnotationSet:
     return AnnotationSet(
         mode="full", views=list(req.ortho_views), source=source,  # type: ignore[arg-type]
-        dimensions=c.dimensions, notes=_merge_notes(req.tolerance, c.ai_notes), model=c.model, rejected=c.rejected,
+        dimensions=_clamp_offsets(c.dimensions), notes=_merge_notes(req.tolerance, c.ai_notes), model=c.model, rejected=c.rejected,
     )
 
 

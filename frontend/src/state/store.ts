@@ -14,6 +14,7 @@ import type {
 export const MAX_ORTHO_VIEWS = 3;
 
 export type { DimensionMode };
+export type ExportFormat = "dxf" | "pdf" | "svg";
 export type Tolerance = "ISO 2768-f" | "ISO 2768-m" | "ISO 2768-c" | "custom";
 
 export interface TitleBlockFields {
@@ -69,6 +70,8 @@ interface State {
   runAnnotate: (useAi: boolean) => Promise<void>;
   autoDimensionAI: () => Promise<void>;
   setOverride: (id: string, patch: DimOverride) => void;
+  exporting: ExportFormat | null;
+  exportDrawing: (format: ExportFormat) => Promise<void>;
   resetOverride: (id?: string) => void;
   toast: (text: string, kind?: Toast["kind"]) => void;
   dismissToast: (id: number) => void;
@@ -148,6 +151,38 @@ export const useStore = create<State>((set, get) => {
     annotations: null,
     aiPending: false,
     overrides: {},
+    exporting: null,
+
+    exportDrawing: async (format) => {
+      const { part, layout, sheet, display, title, tolerance, customTolerance, annotations, overrides } = get();
+      if (!part || !layout) return;
+      set({ exporting: format });
+      try {
+        const { resolveDimensions } = await import("../components/drawing/Dimensions");
+        const { blob, filename } = await api.exportSheet(part.part_id, {
+          format,
+          sheet,
+          display: { hidden: display.hidden, centerlines: display.centerlines, tangent: display.tangent },
+          title,
+          tolerance: toleranceText(tolerance, customTolerance),
+          dimensions: annotations ? resolveDimensions(annotations, overrides, part, layout) : [],
+          notes: annotations?.notes ?? [],
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        get().toast(`Exported ${filename}`, "success");
+      } catch (e) {
+        get().toast(e instanceof ApiError ? e.message : String(e), "error");
+      } finally {
+        set({ exporting: null });
+      }
+    },
 
     init: async () => {
       if (initStarted) return; // StrictMode double-invokes effects in dev

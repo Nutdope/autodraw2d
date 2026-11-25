@@ -8,13 +8,14 @@ GET  /api/parts/{part_id}               -> PartOut
 GET  /api/parts/{part_id}/mesh.stl      -> binary STL for the 3D preview
 POST /api/parts/{part_id}/layout        -> SheetLayout (pure Python, ~1 ms)
 POST /api/parts/{part_id}/annotate      -> AnnotationSet (deterministic / cached / Gemini)
+POST /api/parts/{part_id}/export        -> .svg / .dxf / .pdf file of the user's final sheet
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from slowapi.util import get_remote_address
 
 from samples import SAMPLE_PARTS, sample_path
@@ -22,6 +23,8 @@ from samples import SAMPLE_PARTS, sample_path
 from ..annotation.models import AnnotateRequest, AnnotationSet
 from ..annotation.service import ai_remaining, annotate
 from ..core.config import settings
+from ..export.models import ExportRequest
+from ..export.service import export_filename, export_sheet
 from ..core.rate_limit import limiter
 from ..geometry.loader import StepImportError
 from ..layout import SheetConfig, SheetLayout, compute_layout
@@ -126,3 +129,18 @@ def ai_quota(request: Request) -> dict:
     return {"per_ip_limit": settings.ai_rate_limit, "daily_limit": settings.ai_daily_limit,
             "remaining": ai_remaining(get_remote_address(request)),
             "configured": bool(settings.gemini_api_key)}
+
+
+@router.post("/parts/{part_id}/export")
+@limiter.limit(settings.export_rate_limit)
+def export_part(part_id: str, req: ExportRequest, request: Request) -> Response:
+    entry = _require(part_id)
+    try:
+        data, media = export_sheet(entry.analysis, req)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    name = export_filename(req, entry.name)
+    return Response(data, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{name}"',
+        "Access-Control-Expose-Headers": "Content-Disposition",
+    })
