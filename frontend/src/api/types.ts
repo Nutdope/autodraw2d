@@ -223,6 +223,8 @@ export interface AnnotationSet {
 export interface AnnotateRequest {
   mode: DimensionMode;
   ortho_views: OrthoView[];
+  section_view: OrthoView | null;
+  section_depth: number | null;
   use_ai: boolean;
   tolerance: string;
 }

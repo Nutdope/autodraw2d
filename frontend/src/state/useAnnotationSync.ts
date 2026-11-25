@@ -8,6 +8,9 @@ export function useAnnotationSync() {
   const part = useStore((s) => s.part);
   const mode = useStore((s) => s.dimensionMode);
   const views = useStore((s) => s.sheet.ortho_views);
+  // a section shows depths that are hidden otherwise: they move into that view
+  const sectionView = useStore((s) => s.sheet.section_view);
+  const sectionDepth = useStore((s) => s.sheet.section_depth);
   const tolerance = useStore((s) => s.tolerance);
   const custom = useStore((s) => s.customTolerance);
   const runAnnotate = useStore((s) => s.runAnnotate);
@@ -16,5 +19,5 @@ export function useAnnotationSync() {
     if (!part) return;
     const t = setTimeout(() => runAnnotate(false), 120);
     return () => clearTimeout(t);
-  }, [part, mode, views, tolerance, custom, runAnnotate]);
+  }, [part, mode, views, sectionView, sectionDepth, tolerance, custom, runAnnotate]);
 }

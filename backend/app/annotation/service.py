@@ -25,7 +25,7 @@ from samples.registry import PARTS_DIR
 
 from ..core.config import settings
 from ..core.rate_limit import limiter
-from ..geometry.models import PartAnalysis
+from ..geometry.models import PartAnalysis, SectionProjection
 from .context import build_contexts
 from .coverage import complete
 from .deterministic import base_notes, deterministic_dimensions, feature_notes
@@ -75,9 +75,15 @@ def _ensure_feature_coverage(dims: list, analysis: PartAnalysis, views: list[str
     rules = deterministic_dimensions(analysis, views, "key")
     # Slot depths shown as a dimension in the side view replace any "DEPTH x" leader
     # an older AI / pre-computed layout put in the plan view.
-    side_depth = {fid for d in rules if d.type == "linear" and d.id.startswith("SD") for fid in d.feature_ids}
+    side_depth = {fid for d in rules if d.type == "linear" and d.id[:2] in ("SD", "HD") for fid in d.feature_ids}
     dims = [d for d in dims if not (isinstance(d, CircleDim) and d.type == "leader"
                                     and d.label_text.startswith("DEPTH") and side_depth & set(d.feature_ids))]
+    wording = {frozenset(d.feature_ids): d.label_text for d in rules if isinstance(d, CircleDim) and d.feature_ids}
+    for i, d in enumerate(dims):
+        if isinstance(d, CircleDim) and d.type == "diameter":
+            label = next((t for ids, t in wording.items() if ids & set(d.feature_ids)), None)
+            if label and label != d.label_text:
+                dims[i] = d.model_copy(update={"label_text": label})
     covered = {fid for d in dims if isinstance(d, CircleDim) for fid in d.feature_ids}
     linear = {(d.view, d.orientation, round(d.value_mm, 3)) for d in dims if d.type == "linear"}
     for d in rules:
@@ -154,30 +160,37 @@ def annotate(
     req: AnnotateRequest,
     client_key: str,
     precomputed_ok: bool = True,
+    section: Optional[SectionProjection] = None,
 ) -> AnnotationSet:
+    # Dimension against what the sheet actually draws: a sectioned view shows depths
+    # (pocket / counterbore / keyway floors) as visible edges. Same 2D frame, so the
+    # swap is transparent to every rule. AI runs and caches stay on the uncut part.
+    drawn = analysis
+    if section is not None:
+        drawn = analysis.model_copy(update={"views": {**analysis.views, section.view: section.projection}})
     if req.mode != "full":
-        return _deterministic(analysis, req)
+        return _deterministic(drawn, req)
 
     views = list(req.ortho_views)
     if sample_id and precomputed_ok and (pre := _load(precomputed_path(sample_id, views))):
-        return _from_cache(pre, req, "precomputed", analysis)
+        return _from_cache(pre, req, "precomputed", drawn)
     if sample_id:
         # Built-in samples never spend API quota (public demo); uncovered view sets use the rules.
-        return _deterministic(analysis, req, "sample_not_precomputed" if req.use_ai else "ai_not_requested")
+        return _deterministic(drawn, req, "sample_not_precomputed" if req.use_ai else "ai_not_requested")
     cache_file = part_dir / "annotations" / f"full__{views_key(views)}.json"
     if cached := _load(cache_file):
-        return _from_cache(cached, req, "ai_cached", analysis)
+        return _from_cache(cached, req, "ai_cached", drawn)
 
     if not req.use_ai:
-        return _deterministic(analysis, req, "ai_not_requested")
+        return _deterministic(drawn, req, "ai_not_requested")
     if not settings.gemini_api_key:
-        return _deterministic(analysis, req, "ai_not_configured")
+        return _deterministic(drawn, req, "ai_not_configured")
     # Test both windows before charging either, so a refusal never burns quota.
     lim = limiter.limiter
     if not lim.test(_AI_LIMIT, "ai-annotate", client_key):
-        return _deterministic(analysis, req, "rate_limited")
+        return _deterministic(drawn, req, "rate_limited")
     if not lim.test(_AI_DAILY, "ai-annotate", _GLOBAL):
-        return _deterministic(analysis, req, "daily_cap")
+        return _deterministic(drawn, req, "daily_cap")
     lim.hit(_AI_LIMIT, "ai-annotate", client_key)
     lim.hit(_AI_DAILY, "ai-annotate", _GLOBAL)
 
@@ -187,11 +200,11 @@ def annotate(
         log.warning("AI annotation failed: %s", exc)
         msg = str(exc)
         reason = "ai_quota" if "429" in msg or "RESOURCE_EXHAUSTED" in msg else "ai_error"
-        return _deterministic(analysis, req, reason)
+        return _deterministic(drawn, req, reason)
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(result.model_dump_json(), encoding="utf-8")
-    return _from_cache(result, req, "ai", analysis)
+    return _from_cache(result, req, "ai", drawn)
 
 
 def ai_remaining(client_key: str) -> dict:

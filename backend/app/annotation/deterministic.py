@@ -14,10 +14,10 @@ import math
 from collections import defaultdict
 
 from ..geometry import vec
-from ..geometry.features import fmt_mm
+from ..geometry.features import find_counterbores, fmt_mm
 from ..geometry.models import PartAnalysis
 from .context import ViewCtx, build_contexts
-from .coverage import fill_gaps
+from .coverage import _straight, fill_gaps
 from .patterns import bolt_circles
 from .models import CircleDim, DimensionMode, LinearDim
 
@@ -90,7 +90,6 @@ class _Builder:
         self.dims: list = []
         self.levels = Levels(lambda v: (self.ctx[v].w, self.ctx[v].h))
         self._n = 0
-        self._chain_views: set[tuple[str, str]] = set()  # (view, orientation) used by shaft chains
         self._used_angles: dict[str, list[float]] = defaultdict(list)
 
     # -- helpers -----------------------------------------------------------
@@ -157,6 +156,7 @@ class _Builder:
             if not best:
                 self._side_callout(g.label, g.feature_ids)
                 continue
+            label = self._hole_depths(g)
             v = self.ctx[best]
             # Put the callout on the hole furthest up-right so the leader points away from the part.
             m = max(best_marks, key=lambda mk: (mk.cx - mk.cy))
@@ -165,7 +165,7 @@ class _Builder:
             self.dims.append(CircleDim(
                 type="diameter", id=self._id("D"), view=best, cx=m.cx, cy=m.cy, radius=r,
                 leader_angle_deg=angle, leader_len_mm=length,
-                label_text=bc.label if bc else g.label, feature_ids=g.feature_ids,
+                label_text=bc.label.replace(g.label, label, 1) if bc else label, feature_ids=g.feature_ids,
             ))
             if not bc:  # a bolt circle is located by its PCD, not by x / y positions
                 hole_marks[best].extend(best_marks)
@@ -299,7 +299,6 @@ class _Builder:
                     offset_mm=off, offset_from="edge", value_mm=round(t1 - t0, 4),
                 )
                 self.dims.append(d)
-            self._chain_views.add((name, orientation))
 
     # -- chamfers ------------------------------------------------------------
     @staticmethod
@@ -401,22 +400,106 @@ class _Builder:
                 feature_ids=grp.feature_ids,
             ))
 
+    # -- depths seen from the side -------------------------------------------------
+    def _mouth_floor(self, ends, axis):
+        """(mouth, floor): the end nearer the part's outside along the axis is the mouth."""
+        g = self.a.geometry
+        i = max(range(3), key=lambda k: abs(axis[k]))
+        outside = lambda p: min(p[i] - g.bbox_min[i], g.bbox_max[i] - p[i])  # noqa: E731
+        mouth, floor = sorted(ends, key=outside)
+        return mouth, floor
+
+    @staticmethod
+    def _floor_visible(v: ViewCtx, axis, floor, half: float) -> bool:
+        """Does this view show the floor of a depth as a VISIBLE edge (e.g. in a section)?
+        The edge runs across the axis at the floor, covering at least half of +-half."""
+        if abs(vec.dot(axis, v.vd.normal)) > 1e-3:
+            return False
+        fx, fy = v.local(floor)
+        along_x = abs(vec.dot(axis, v.vd.x_dir)) > 0.999  # axis runs along local x
+        need = max(half, 1e-3)
+        for p in v.vp.visible.primitives:
+            seg = _straight(p)
+            if seg is None:
+                continue
+            (x0, y0), (x1, y1) = seg
+            if along_x:  # floor edge is vertical at x = fx
+                if abs(x0 - fx) > 1e-3 or abs(x1 - fx) > 1e-3:
+                    continue
+                lo, hi = sorted((y0, y1))
+                cover = min(hi, fy + need) - max(lo, fy - need)
+            else:  # floor edge is horizontal at y = fy
+                if abs(y0 - fy) > 1e-3 or abs(y1 - fy) > 1e-3:
+                    continue
+                lo, hi = sorted((x0, x1))
+                cover = min(hi, fx + need) - max(lo, fx - need)
+            if cover >= need:
+                return True
+        return False
+
+    def _hole_depths(self, grp) -> str:
+        """Dimension blind-hole / counterbore depths in a view that shows their floor
+        as a visible edge (a section), and drop "DEPTH x" from the callout for those.
+        Returns the callout text to use."""
+        g = self.a.geometry
+        cbores = find_counterbores(g.features)
+        by_id = {f.id: f for f in g.features}
+        members = [by_id[i] for i in grp.feature_ids if i in by_id and by_id[i].id not in {c.id for c in cbores.values()}]
+        if not members:
+            return grp.label
+        head, _, tail = grp.label.partition(", CBORE")
+        f0 = members[0]
+        kinds = []
+        if not f0.through:
+            kinds.append(("hole", [m for m in members]))
+        if f0.id in cbores:
+            kinds.append(("cbore", [cbores[m.id] for m in members if m.id in cbores]))
+        for kind, feats in kinds:
+            placed = False
+            for f in sorted(feats, key=lambda f: -f.center[0]):
+                mouth, floor = self._mouth_floor([f.start, f.end], f.axis)
+                for name in self.order:
+                    v = self.ctx[name]
+                    if not self._floor_visible(v, f.axis, floor, f.radius):
+                        continue
+                    pm, pf = v.local(mouth), v.local(floor)
+                    vertical = abs(pm[0] - pf[0]) < 1e-6
+                    # inside the hole, half way between axis and wall: clear of the centre line
+                    dx, dy = (f.radius / 2, 0.0) if vertical else (0.0, -f.radius / 2)
+                    self.dims.append(LinearDim(
+                        id=self._id("HD"), view=name, x1=pm[0] + dx, y1=pm[1] + dy, x2=pf[0] + dx, y2=pf[1] + dy,
+                        orientation="vertical" if vertical else "horizontal",
+                        offset_mm=0.0, offset_from="points", value_mm=round(f.length, 4),
+                        feature_ids=list(grp.feature_ids),
+                    ))
+                    placed = True
+                    break
+                if placed:
+                    break
+            if placed:
+                depth = f" DEPTH {fmt_mm(feats[0].length)}"
+                if kind == "hole":
+                    head = head.replace(depth, "", 1)
+                else:
+                    tail = tail.replace(depth, "", 1)
+        return head + (", CBORE" + tail if tail else "")
+
     def _slot_depth(self, sl, grp) -> bool:
         """Dimension a slot / keyway depth in a view where both its depth axis and its
         length lie in the drawing plane (mouth and floor are edges there).
         Returns False when no active view shows it that way."""
+        mid = vec.scale(vec.add(sl.c1, sl.c2), 0.5)
+        mouth_mid, floor_mid = self._mouth_floor(
+            [vec.add(mid, vec.scale(sl.axis, s * sl.depth / 2)) for s in (1.0, -1.0)], sl.axis)
         name = next((n for n in self.order
                      if abs(vec.dot(sl.axis, self.ctx[n].vd.normal)) < 1e-3
-                     and abs(vec.dot(sl.direction, self.ctx[n].vd.normal)) < 1e-3), None)
+                     and abs(vec.dot(sl.direction, self.ctx[n].vd.normal)) < 1e-3
+                     and self._floor_visible(self.ctx[n], sl.axis, floor_mid, sl.center_distance / 2)), None)
         if name is None:
             return False
         v = self.ctx[name]
-        g = self.a.geometry
-        # the open side is the depth end nearer the part's outside along that axis
-        i = max(range(3), key=lambda k: abs(sl.axis[k]))
-        ends = [vec.add(sl.c2, vec.scale(sl.axis, s * sl.depth / 2)) for s in (1.0, -1.0)]
-        outside = lambda p: min(p[i] - g.bbox_min[i], g.bbox_max[i] - p[i])  # noqa: E731
-        mouth, floor = sorted(ends, key=outside)
+        mouth, floor = self._mouth_floor(
+            [vec.add(sl.c2, vec.scale(sl.axis, s * sl.depth / 2)) for s in (1.0, -1.0)], sl.axis)
         # measure at the far rounded end, on the slot's centre plane
         far = vec.scale(sl.direction, sl.width / 2)
         pm, pf = v.local(vec.add(mouth, far)), v.local(vec.add(floor, far))
@@ -466,34 +549,6 @@ class _Builder:
                 ))
                 break
 
-    def profile_steps(self) -> None:
-        """Full mode: chain dimensions for plate thicknesses / steps read off the profile."""
-        for name in self.order[:2]:
-            v = self.ctx[name]
-            lines = [p for p in v.vp.visible.primitives if p.type == "line"]
-            vert = [p for p in lines if abs(p.p0[0] - p.p1[0]) < 1e-6]
-            horiz = [p for p in lines if abs(p.p0[1] - p.p1[1]) < 1e-6]
-
-            xs = sorted({round(p.p0[0], 3) for p in vert})
-            if 3 <= len(xs) <= 6 and (name, "horizontal") not in self._chain_views:
-                off = self._offset(name, "top", (xs[0], xs[-1]))
-                lowest = {x: max(max(p.p0[1], p.p1[1]) for p in vert if round(p.p0[0], 3) == x) for x in xs}
-                for x0, x1 in zip(xs, xs[1:]):
-                    self.dims.append(LinearDim(
-                        id=self._id("L"), view=name, x1=x0, y1=lowest[x0], x2=x1, y2=lowest[x1],
-                        orientation="horizontal", offset_mm=off, offset_from="edge", value_mm=round(x1 - x0, 4),
-                    ))
-
-            ys = sorted({round(p.p0[1], 3) for p in horiz})
-            if 3 <= len(ys) <= 6 and (name, "vertical") not in self._chain_views:
-                off = self._offset(name, "left", (ys[0], ys[-1]))
-                rightmost = {y: max(max(p.p0[0], p.p1[0]) for p in horiz if round(p.p0[1], 3) == y) for y in ys}
-                for y0, y1 in zip(ys, ys[1:]):
-                    self.dims.append(LinearDim(
-                        id=self._id("L"), view=name, x1=rightmost[y0], y1=y0, x2=rightmost[y1], y2=y1,
-                        orientation="vertical", offset_mm=off, offset_from="edge", value_mm=round(y1 - y0, 4),
-                    ))
-
     def overall(self) -> None:
         assigned: dict[str, tuple[str, str]] = {}
         for name in self.order:
@@ -529,8 +584,6 @@ def deterministic_dimensions(analysis: PartAnalysis, views: list[str], mode: Dim
         b.slots()
         b.arcs()
         b.chamfers()
-    if mode == "full":
-        b.profile_steps()
     b.overall()
     if mode == "full" and fill:
         b.fill_gaps()

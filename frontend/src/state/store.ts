@@ -291,6 +291,8 @@ export const useStore = create<State>((set, get) => {
         const res = await api.annotate(part.part_id, {
           mode: useAi ? "full" : dimensionMode,
           ortho_views: sheet.ortho_views,
+          section_view: sheet.section_view,
+          section_depth: sheet.section_depth,
           use_ai: useAi,
           tolerance: toleranceText(tolerance, customTolerance),
         });

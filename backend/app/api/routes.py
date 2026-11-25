@@ -158,8 +158,11 @@ def layout(part_id: str, cfg: SheetConfig) -> SheetLayout:
 def annotate_part(part_id: str, req: AnnotateRequest, request: Request) -> AnnotationSet:
     """AI quota (AI_RATE_LIMIT per IP) is only charged when Gemini is actually called."""
     entry = _require(part_id)
+    section = None
+    if req.section_view is not None and req.section_view in req.ortho_views:
+        section = store.section(entry, req.section_view, req.section_depth)
     return annotate(entry.analysis, entry.directory, entry.sample_id, req, get_remote_address(request),
-                    precomputed_ok=entry.orientation.is_identity)
+                    precomputed_ok=entry.orientation.is_identity, section=section)
 
 
 @router.get("/ai/quota")

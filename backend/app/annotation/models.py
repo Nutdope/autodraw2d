@@ -85,6 +85,9 @@ class AnnotationSet(BaseModel):
 class AnnotateRequest(BaseModel):
     mode: DimensionMode = "key"
     ortho_views: list[OrthoViewName] = ["front", "top", "right"]
+    # The sheet's full section, if any: depths whose floor it shows are dimensioned there.
+    section_view: Optional[OrthoViewName] = None
+    section_depth: Optional[float] = None
     use_ai: bool = False  # only an explicit "Auto-Dimension (AI)" click spends quota
     tolerance: str = "ISO 2768-m"
 

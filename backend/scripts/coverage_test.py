@@ -4,7 +4,8 @@ Run from ``backend/``:
     python -m scripts.coverage_test            # report + exit 1 if any coordinate is left undimensioned
     python -m scripts.coverage_test --before   # also show what the rules alone (no gap filling) miss
 
-For every part and view set, the full deterministic dimension set must tie every
+For every part and view set (plus the front view in section A-A), the full
+deterministic dimension set must tie every
 edge position and hole centre to the datum (app.annotation.coverage).
 """
 from __future__ import annotations
@@ -35,7 +36,7 @@ from build123d import (
 
 from app.annotation.coverage import find_gaps
 from app.annotation.deterministic import deterministic_dimensions
-from app.pipeline import analyze_part
+from app.pipeline import analyze_part, compute_section
 from samples import SAMPLE_PARTS, sample_path
 
 VIEW_SETS = [["front", "top", "right"], ["front", "top", "left"], ["front", "right"]]
@@ -116,11 +117,13 @@ def main() -> int:
 
     failed = 0
     for name, path in parts.items():
-        a = analyze_part(path)
-        for views in VIEW_SETS:
+        plain = analyze_part(path)
+        sec = compute_section(path, plain, "front", None)
+        cut = plain.model_copy(update={"views": {**plain.views, "front": sec.projection}})
+        for views, a, label in [(v, plain, "") for v in VIEW_SETS] + [(VIEW_SETS[0], cut, " +A-A")]:
             dims = deterministic_dimensions(a, views, "full")
             gaps = find_gaps(a, views, dims)
-            tag = f"{name:<17} {'/'.join(views):<18}"
+            tag = f"{name:<17} {'/'.join(views) + label:<23}"
             if args.before:
                 raw = deterministic_dimensions(a, views, "full", fill=False)
                 miss = find_gaps(a, views, raw)
