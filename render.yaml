@@ -1,0 +1,39 @@
+# Render Blueprint for the AutoDraw 2D backend (the frontend lives on Vercel).
+# Render dashboard → New → Blueprint → pick this repo. Secrets marked `sync: false`
+# are asked for once in the dashboard and never stored in git.
+services:
+  - type: web
+    name: autodraw2d-api
+    runtime: docker
+    plan: free
+    region: frankfurt # closest Render region to Europe; change before the first deploy if needed
+    rootDir: backend # only changes under backend/ trigger a redeploy
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      # --- secrets / per-deployment (entered in the dashboard) ---
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS # your Vercel URL, e.g. https://autodraw2d.vercel.app
+        sync: false
+      - key: CORS_ORIGIN_REGEX # optional, Vercel previews: https://autodraw2d(-[a-z0-9-]+)?\.vercel\.app
+        sync: false
+      # --- tuned for the free instance (512 MB RAM, 0.1 CPU) ---
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_FALLBACK_MODELS
+        value: gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite
+      - key: AI_RATE_LIMIT
+        value: 5/hour
+      - key: AI_DAILY_LIMIT
+        value: 50/day
+      - key: MEMORY_CACHE_ITEMS
+        value: "8"
+      - key: MAX_UPLOAD_MB
+        value: "10"
+      - key: MAX_FACES
+        value: "1500"
+      - key: MAX_SOLIDS
+        value: "10"

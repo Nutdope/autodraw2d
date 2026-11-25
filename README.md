@@ -8,7 +8,7 @@ deterministically with OpenCascade (`build123d`); an LLM is only ever used to
 
 ```
 .
-├── backend/                      FastAPI + build123d (Docker → Railway/Render/Fly)
+├── backend/                      FastAPI + build123d (Docker → Render)
 │   ├── app/
 │   │   ├── geometry/             deterministic CAD kernel layer (OCC only lives here)
 │   │   │   ├── loader.py         STEP import + validation
@@ -30,10 +30,11 @@ deterministically with OpenCascade (`build123d`); an LLM is only ever used to
 │   │   ├── pipeline.py           STEP → PartAnalysis orchestration
 │   │   └── main.py               FastAPI app
 │   ├── samples/                  demo parts, generator, pre-computed AI annotations
-│   ├── scripts/                  cli_test.py (304 checks), precompute_annotations.py
+│   ├── scripts/                  cli_test.py (304 checks), precompute_annotations.py, warm_cache.py
 │   ├── Dockerfile
 │   └── requirements.txt
-└── frontend/                     React 18 + Vite + TS + Tailwind (→ Vercel)
+├── frontend/                     React 18 + Vite + TS + Tailwind (→ Vercel)
+└── render.yaml                   Render Blueprint for the backend
 ```
 
 ## Coordinate conventions
@@ -135,34 +136,36 @@ they always match each other and the canvas.
 
 ## Deployment
 
-### Backend → Hugging Face Spaces (recommended, free)
+### Backend → Render (free tier, via `render.yaml`)
 
-The free "CPU basic" Space hardware has plenty of RAM for the CAD kernel. A GitHub
-Action (`.github/workflows/deploy-huggingface.yml`) pushes `backend/` to the Space
-whenever it changes; `backend/README.md` carries the Space config (`sdk: docker`,
-`app_port: 8000`).
+The backend runs as a Docker web service on Render's free instance (512 MB RAM,
+0.1 CPU, sleeps after 15 min idle, ~1 min to wake). The Docker build pre-analyses
+the built-in samples (`scripts/warm_cache.py`), so they open instantly even right
+after a wake; uploads of new parts are analysed on the slow free CPU (expect
+tens of seconds for complex parts).
 
-1. **Create the Space** — huggingface.co → *New Space* → name e.g. `autodraw2d-api`,
-   SDK **Docker** (blank template), hardware **CPU basic (free)**, visibility **Public**.
-2. **Space secrets** — Space → *Settings* → *Variables and secrets*:
-   * secret `GEMINI_API_KEY` = your key
-   * variable `CORS_ORIGINS` = your Vercel URL (e.g. `https://autodraw2d.vercel.app`)
-   * optional variable `CORS_ORIGIN_REGEX` = `https://autodraw2d(-[a-z0-9-]+)?\.vercel\.app` (preview deploys)
-3. **HF token** — huggingface.co → *Settings* → *Access Tokens* → new token, type **Write**.
-4. **GitHub settings** — repo → *Settings* → *Secrets and variables* → *Actions*:
-   * *Secrets* tab: `HF_TOKEN` = the token from step 3
-   * *Variables* tab: `HF_SPACE` = `<hf-username>/autodraw2d-api`
-5. **Deploy** — repo → *Actions* → *Deploy backend to Hugging Face* → *Run workflow*
-   (later pushes that touch `backend/` deploy automatically). The first Docker build
-   takes ~5–10 min; follow it in the Space's *Logs* tab.
-6. **Check** — open `https://<hf-username>-autodraw2d-api.hf.space/api/health`.
-7. **Point the frontend at it** — Vercel → project → *Settings* → *Environment Variables*:
-   `VITE_API_URL` = that `https://…hf.space` URL, then redeploy.
+1. **Blueprint** — render.com → *New* → *Blueprint* → connect GitHub → pick
+   `Nutdope/autodraw2d`. Render reads `render.yaml` (service `autodraw2d-api`,
+   Docker, free plan, health check `/api/health`).
+2. **Secrets** — Render asks for the `sync: false` values once:
+   * `GEMINI_API_KEY` — your key (leave empty to run rule-based only)
+   * `CORS_ORIGINS` — your Vercel URL, e.g. `https://autodraw2d.vercel.app`
+   * `CORS_ORIGIN_REGEX` — optional, `https://autodraw2d(-[a-z0-9-]+)?\.vercel\.app` for preview deploys
+3. **Deploy** — *Apply*. The first build takes ~10 min (CAD kernel + sample warm-up);
+   follow it under the service's *Logs*. Later pushes that touch `backend/` redeploy
+   automatically.
+4. **Check** — open `https://autodraw2d-api.onrender.com/api/health` (the exact URL is
+   shown at the top of the service page).
+5. **Point the frontend at it** — on Vercel set `VITE_API_URL` to that URL and redeploy.
 
-Free Spaces sleep after a long idle period; the first request then wakes the
-container (about a minute) — the frontend retries automatically meanwhile.
+Free-tier notes: the disk is wiped on every spin-down (the baked samples survive,
+uploaded parts and AI caches don't); rate-limit counters reset on restart; 750 free
+instance hours per month cover one always-available service. The $7/month instance
+removes the sleep.
 
-### Backend → Railway / Render / Fly.io (Docker)
+### Other Docker hosts (Railway / Fly.io / Cloud Run)
+
+Build and run the same image locally (needs Docker Desktop):
 
 ```powershell
 docker build -t autodraw-backend ./backend
@@ -172,19 +175,10 @@ docker build -t autodraw-backend ./backend
 docker run -p 8000:8000 --env-file backend/.env autodraw-backend
 ```
 
-On the platform: point it at `backend/Dockerfile` (root directory `backend`),
-and set these environment variables (never commit `.env`):
-
-| Variable | Example |
-|---|---|
-| `GEMINI_API_KEY` | your key (optional — without it everything falls back to rule-based dimensions) |
-| `CORS_ORIGINS` | `https://autodraw.yourdomain.com` (your Vercel URL, comma-separated list) |
-| `AI_RATE_LIMIT` / `AI_DAILY_LIMIT` | `5/hour` / `50/day` |
-| `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS` | see `backend/.env.example` |
-
-The platform's `$PORT` is honoured. Give the service ≥ 1 GB RAM: the OpenCascade
-kernel plus HLR on larger parts does not fit in 512 MB free tiers comfortably.
-Rate-limit counters and the part cache are in-memory / ephemeral per instance.
+On any Docker host: build from `backend/Dockerfile` with `backend/` as the
+context, and set the variables from `render.yaml` / `backend/.env.example`
+(never commit `.env`). `$PORT` is honoured. With more than 512 MB you can raise
+`MAX_FACES` / `MAX_UPLOAD_MB`.
 
 ### Frontend → Vercel
 
@@ -192,5 +186,5 @@ Import the repo, set **Root Directory** to `frontend` (framework: Vite), and add
 
 | Variable | Example |
 |---|---|
-| `VITE_API_URL` | `https://autodraw-api.up.railway.app` |
+| `VITE_API_URL` | `https://autodraw2d-api.onrender.com` |
 | `VITE_PORTFOLIO_URL` | your portfolio URL (shows "← Back to Portfolio") |

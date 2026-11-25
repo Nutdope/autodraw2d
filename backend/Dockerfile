@@ -6,7 +6,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CACHE_DIR=/app/cache
 
 # Shared libs the OpenCascade / VTK wheels (cadquery-ocp) load at import time
 RUN apt-get update \
@@ -20,20 +21,21 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-# Unprivileged runtime user. UID 1000 because Hugging Face Spaces runs containers
-# as uid 1000; the part cache is ephemeral (rebuilt on demand).
+# Analyse the built-in samples now (build machines are fast) so they open
+# instantly on low-CPU hosts whose disk is wiped on every spin-down.
+RUN python -m scripts.warm_cache
+
+# Unprivileged runtime user; the part cache stays writable for uploads
 RUN useradd --create-home --uid 1000 appuser \
-    && mkdir -p /app/cache \
     && chown -R appuser /app/cache
 USER appuser
 ENV HOME=/home/appuser
 
-# Railway / Render / Fly inject $PORT; Hugging Face uses app_port (8000) from README.md
-ENV PORT=8000 \
-    CACHE_DIR=/app/cache
+# Render / Railway / Fly inject $PORT; 8000 for local runs
+ENV PORT=8000
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"8000\")}/api/health', timeout=4)"
 
 # --proxy-headers so per-IP rate limits see the real client IP behind the platform proxy
