@@ -135,6 +135,33 @@ they always match each other and the canvas.
 
 ## Deployment
 
+### Backend → Hugging Face Spaces (recommended, free)
+
+The free "CPU basic" Space hardware has plenty of RAM for the CAD kernel. A GitHub
+Action (`.github/workflows/deploy-huggingface.yml`) pushes `backend/` to the Space
+whenever it changes; `backend/README.md` carries the Space config (`sdk: docker`,
+`app_port: 8000`).
+
+1. **Create the Space** — huggingface.co → *New Space* → name e.g. `autodraw2d-api`,
+   SDK **Docker** (blank template), hardware **CPU basic (free)**, visibility **Public**.
+2. **Space secrets** — Space → *Settings* → *Variables and secrets*:
+   * secret `GEMINI_API_KEY` = your key
+   * variable `CORS_ORIGINS` = your Vercel URL (e.g. `https://autodraw2d.vercel.app`)
+   * optional variable `CORS_ORIGIN_REGEX` = `https://autodraw2d(-[a-z0-9-]+)?\.vercel\.app` (preview deploys)
+3. **HF token** — huggingface.co → *Settings* → *Access Tokens* → new token, type **Write**.
+4. **GitHub settings** — repo → *Settings* → *Secrets and variables* → *Actions*:
+   * *Secrets* tab: `HF_TOKEN` = the token from step 3
+   * *Variables* tab: `HF_SPACE` = `<hf-username>/autodraw2d-api`
+5. **Deploy** — repo → *Actions* → *Deploy backend to Hugging Face* → *Run workflow*
+   (later pushes that touch `backend/` deploy automatically). The first Docker build
+   takes ~5–10 min; follow it in the Space's *Logs* tab.
+6. **Check** — open `https://<hf-username>-autodraw2d-api.hf.space/api/health`.
+7. **Point the frontend at it** — Vercel → project → *Settings* → *Environment Variables*:
+   `VITE_API_URL` = that `https://…hf.space` URL, then redeploy.
+
+Free Spaces sleep after a long idle period; the first request then wakes the
+container (about a minute) — the frontend retries automatically meanwhile.
+
 ### Backend → Railway / Render / Fly.io (Docker)
 
 ```powershell

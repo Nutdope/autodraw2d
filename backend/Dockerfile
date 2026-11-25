@@ -20,13 +20,15 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-# Unprivileged runtime user; the part cache is ephemeral (rebuilt on demand)
-RUN useradd --create-home --uid 10001 appuser \
+# Unprivileged runtime user. UID 1000 because Hugging Face Spaces runs containers
+# as uid 1000; the part cache is ephemeral (rebuilt on demand).
+RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /app/cache \
     && chown -R appuser /app/cache
 USER appuser
+ENV HOME=/home/appuser
 
-# Railway / Render / Fly inject $PORT; default for local runs
+# Railway / Render / Fly inject $PORT; Hugging Face uses app_port (8000) from README.md
 ENV PORT=8000 \
     CACHE_DIR=/app/cache
 EXPOSE 8000

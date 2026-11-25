@@ -1,0 +1,53 @@
+# Deploys backend/ to a Hugging Face Docker Space whenever it changes on main.
+#
+# One-time setup (GitHub repo → Settings → Secrets and variables → Actions):
+#   secret   HF_TOKEN  — Hugging Face access token with WRITE permission
+#   variable HF_SPACE  — <hf-username>/<space-name>, e.g. nutdope/autodraw2d-api
+# Until both exist this workflow skips (it never fails your pushes).
+name: Deploy backend to Hugging Face
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/deploy-huggingface.yml"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-huggingface
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_SPACE" ]; then
+            echo "HF_TOKEN secret or HF_SPACE variable not set — skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Push backend/ to the Space
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          # backend/ becomes the root of the Space repo (Dockerfile + README.md at top level)
+          git subtree split --prefix=backend -b hf-deploy
+          HF_USER="${HF_SPACE%%/*}"
+          git push --force "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" hf-deploy:main
+          echo "Pushed. Build logs: https://huggingface.co/spaces/${HF_SPACE}?logs=build"
