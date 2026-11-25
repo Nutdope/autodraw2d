@@ -80,7 +80,7 @@ export function TopToolbar() {
             Upload<span className="hidden sm:inline"> .STEP</span>
           </span>
         </button>
-        <span className="hidden text-xs text-slate-600 lg:inline">or try</span>
+        <span className="hidden whitespace-nowrap text-xs text-slate-600 lg:inline">or try</span>
         {samples.map((s) => (
           <button
             key={s.id}
@@ -88,7 +88,7 @@ export function TopToolbar() {
             disabled={!!loading}
             title={s.description}
             onClick={() => loadSample(s.id)}
-            className={`hidden rounded-md border px-3 py-1.5 text-sm transition disabled:opacity-50 lg:block ${
+            className={`hidden whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition disabled:opacity-50 lg:block ${
               part?.sample_id === s.id
                 ? "border-sky-500/60 bg-sky-500/10 text-sky-200"
                 : "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white"

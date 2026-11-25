@@ -43,6 +43,8 @@ export interface Toast {
 
 interface State {
   samples: Sample[];
+  /** connecting: first contact / free-tier host waking up · offline: gave up, user can retry */
+  backend: "connecting" | "ready" | "offline";
   part: Part | null;
   loading: string | null; // human-readable status while a part loads
   layout: SheetLayout | null;
@@ -58,7 +60,7 @@ interface State {
   aiPending: boolean;
   overrides: Record<string, DimOverride>;
 
-  init: () => Promise<void>;
+  init: (force?: boolean) => Promise<void>;
   loadSample: (id: string) => Promise<void>;
   uploadFile: (file: File) => Promise<void>;
   setSheet: (patch: Partial<SheetConfig>) => void;
@@ -93,6 +95,7 @@ const FALLBACK_MSG: Record<string, string> = {
     "No pre-computed AI layout for this sample + view combination — showing rule-based dimensions (upload your own part for live AI).",
 };
 let initStarted = false;
+const WAKE_TIMEOUT_MS = 180_000;
 const today = () => new Date().toISOString().slice(0, 10);
 
 function drawingNumberFor(name: string) {
@@ -123,6 +126,7 @@ export const useStore = create<State>((set, get) => {
 
   return {
     samples: [],
+    backend: "connecting",
     part: null,
     loading: null,
     layout: null,
@@ -184,20 +188,23 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    init: async () => {
-      if (initStarted) return; // StrictMode double-invokes effects in dev
+    init: async (force = false) => {
+      if (initStarted && !force) return; // StrictMode double-invokes effects in dev
       initStarted = true;
-      // Free-tier hosts cold-start (and the CAD kernel import takes a few seconds),
-      // so retry quietly before surfacing an error.
-      for (let attempt = 0; attempt < 8; attempt++) {
+      set({ backend: "connecting" });
+      // A free-tier backend (Render) sleeps after 15 min idle; waking it and loading the
+      // CAD kernel can take a minute or more. Keep retrying quietly for up to ~3 minutes.
+      const deadline = Date.now() + WAKE_TIMEOUT_MS;
+      for (let attempt = 0; Date.now() < deadline; attempt++) {
         try {
-          set({ samples: await api.samples() });
+          set({ samples: await api.samples(), backend: "ready" });
           return;
-        } catch (e) {
-          if (attempt === 7) get().toast(e instanceof ApiError ? e.message : String(e), "error");
-          await new Promise((r) => setTimeout(r, 1500 + attempt * 1000));
+        } catch {
+          await new Promise((r) => setTimeout(r, Math.min(1500 * 1.4 ** attempt, 8000)));
         }
       }
+      set({ backend: "offline" });
+      get().toast("The drawing server didn't respond. Please retry in a moment.", "error");
     },
 
     loadSample: async (id) => {

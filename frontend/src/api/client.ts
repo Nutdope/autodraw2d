@@ -31,7 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  samples: () => request<Sample[]>("/api/samples"),
+  // per-attempt timeout so a hung request during a cold start doesn't stall the retry loop
+  samples: () => request<Sample[]>("/api/samples", { signal: AbortSignal.timeout(60_000) }),
   loadSample: (id: string) => request<Part>(`/api/samples/${id}/load`, { method: "POST" }),
   upload: (file: File) => {
     const body = new FormData();
