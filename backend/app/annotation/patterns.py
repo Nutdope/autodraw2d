@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass
 
 from ..geometry import vec
-from ..geometry.features import fmt_mm
+from ..geometry.feature_math import fmt_mm
 from ..geometry.models import PartAnalysis
 
 TOL = 1e-2

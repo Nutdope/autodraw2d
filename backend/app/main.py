@@ -18,6 +18,7 @@ from samples import SAMPLE_PARTS
 from .api.routes import load_sample, router
 from .core.config import settings
 from .core.rate_limit import limiter
+from .services import worker
 
 log = logging.getLogger("autodraw")
 
@@ -31,10 +32,15 @@ def _warm_samples() -> None:
             log.exception("failed to warm sample %s", sample_id)
 
 
+def _warm() -> None:
+    worker.warm()  # load OpenCascade in the CAD worker before the first upload
+    if settings.warm_samples:
+        _warm_samples()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.warm_samples:
-        threading.Thread(target=_warm_samples, daemon=True).start()
+    threading.Thread(target=_warm, daemon=True).start()
     yield
 
 

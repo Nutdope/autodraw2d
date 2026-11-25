@@ -35,6 +35,9 @@ class Settings:
     ai_rate_limit: str = os.getenv("AI_RATE_LIMIT", "5/hour")  # per client IP
     ai_daily_limit: str = os.getenv("AI_DAILY_LIMIT", "50/day")  # all visitors combined
     memory_cache_items: int = int(os.getenv("MEMORY_CACHE_ITEMS", "24"))
+    # OpenCascade runs in a separate worker process (keeps /api/health answering during uploads)
+    cad_worker: bool = os.getenv("CAD_WORKER", "1") not in ("0", "false", "no")
+    worker_timeout_s: float = float(os.getenv("WORKER_TIMEOUT_S", "300"))
     warm_samples: bool = os.getenv("WARM_SAMPLES", "1") == "1"
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")

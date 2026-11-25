@@ -13,10 +13,13 @@ import re
 from pathlib import Path
 from typing import Literal, Optional
 
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf
-from OCP.TopoDS import TopoDS_Shape
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
+
+if TYPE_CHECKING:  # OpenCascade is only loaded in the CAD worker process
+    from OCP.gp import gp_Trsf
+    from OCP.TopoDS import TopoDS_Shape
 
 UpAxis = Literal["+Z", "-Z", "+Y", "-Y", "+X", "-X"]
 Turn = Literal[0, 90, 180, 270]
@@ -75,6 +78,8 @@ def resolve(req: OrientationRequest, data: bytes) -> Orientation:
 
 
 def _rot(axis: tuple[float, float, float], degrees: float) -> gp_Trsf:
+    from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf
+
     t = gp_Trsf()
     t.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(*axis)), math.radians(degrees))
     return t
@@ -92,6 +97,8 @@ _UP_TO_Z: dict[str, tuple[tuple[float, float, float], float]] = {
 
 
 def transform_for(o: Orientation) -> gp_Trsf:
+    from OCP.gp import gp_Trsf
+
     axis, deg = _UP_TO_Z[o.up]
     total = _rot((0, 0, 1), o.turn)  # turn about the (new) vertical axis, applied last
     total.Multiply(_rot(axis, deg))
@@ -101,6 +108,8 @@ def transform_for(o: Orientation) -> gp_Trsf:
 def apply(shape: TopoDS_Shape, o: Orientation) -> TopoDS_Shape:
     """Bake the rotation into the geometry (copy=True) so every downstream
     algorithm (bbox, HLR, classifier, mesh) sees plain, untransformed shapes."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+
     if o.is_identity:
         return shape
     return BRepBuilderAPI_Transform(shape, transform_for(o), True).Shape()

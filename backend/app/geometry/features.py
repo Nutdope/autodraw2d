@@ -22,6 +22,7 @@ from OCP.TopoDS import TopoDS, TopoDS_Shape
 
 from . import vec
 from .models import ChamferFeature, CylinderFeature, FeatureGroup, PartGeometry, SlotFeature
+from .feature_math import find_counterbores, fmt_mm  # noqa: F401 (re-exported)
 from .recognition import chamfer_label, extract_chamfers, find_slots, slot_label
 from .topo import iter_shapes
 
@@ -156,14 +157,6 @@ def _axis_label(d: vec.Vec3) -> str | None:
     return None
 
 
-def fmt_mm(v: float) -> str:
-    """Engineering number format: at least one decimal, at most two."""
-    s = f"{v:.2f}"
-    if s.endswith("0"):
-        s = s[:-1]
-    return s
-
-
 def extract_features(shape: TopoDS_Shape, part_size: float) -> list[CylinderFeature]:
     solids = list(iter_shapes(shape, TopAbs_ShapeEnum.TopAbs_SOLID))
     eps = max(0.01, 1e-4 * part_size)
@@ -211,30 +204,6 @@ def extract_features(shape: TopoDS_Shape, part_size: float) -> list[CylinderFeat
             )
         )
     return features
-
-
-def _coaxial(a: CylinderFeature, b: CylinderFeature) -> bool:
-    if abs(vec.dot(a.axis, b.axis)) < 0.9999:
-        return False
-    rel = vec.sub(b.center, a.center)
-    perp = vec.sub(rel, vec.scale(a.axis, vec.dot(rel, a.axis)))
-    return vec.norm(perp) < 1e-3
-
-
-def find_counterbores(features: list[CylinderFeature]) -> dict[str, CylinderFeature]:
-    """Map small-hole id -> its counterbore (a larger, blind, coaxial hole sharing an end)."""
-    holes = [f for f in features if f.kind == "hole"]
-    out: dict[str, CylinderFeature] = {}
-    for big in holes:
-        if big.through:
-            continue
-        for small in holes:
-            if small.radius >= big.radius - 1e-6 or small.id in out or not _coaxial(big, small):
-                continue
-            ends_b, ends_s = (big.start, big.end), (small.start, small.end)
-            if any(vec.norm(vec.sub(p, q)) < 1e-3 for p in ends_b for q in ends_s):
-                out[small.id] = big
-    return out
 
 
 def group_features(

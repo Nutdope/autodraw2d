@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from build123d import Shape, import_step
-from OCP.TopAbs import TopAbs_ShapeEnum
+from typing import TYPE_CHECKING
 
-from .topo import iter_shapes
+if TYPE_CHECKING:  # OpenCascade is only loaded in the CAD worker process
+    from build123d import Shape
 
 MAX_STEP_BYTES = 25 * 1024 * 1024  # public-hosting guard rail
 
@@ -20,6 +20,11 @@ class PartTooComplexError(StepImportError):
 
 
 def load_step(path: str | Path, max_faces: int | None = None, max_solids: int | None = None) -> Shape:
+    from build123d import import_step
+    from OCP.TopAbs import TopAbs_ShapeEnum
+
+    from .topo import iter_shapes
+
     path = Path(path)
     if not path.is_file():
         raise StepImportError(f"file not found: {path}")

@@ -18,7 +18,7 @@ from ..core.config import settings
 log = logging.getLogger("autodraw.gemini")
 # overloaded / retired / quota-exhausted -> next model in the list
 RETRYABLE = ("503", "UNAVAILABLE", "404", "NOT_FOUND", "429", "RESOURCE_EXHAUSTED")
-from ..geometry.features import fmt_mm
+from ..geometry.feature_math import fmt_mm
 from ..geometry.models import PartAnalysis
 from .context import ViewCtx
 from .deterministic import describe

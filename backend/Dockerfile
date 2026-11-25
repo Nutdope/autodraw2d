@@ -23,7 +23,7 @@ COPY . .
 
 # Analyse the built-in samples now (build machines are fast) so they open
 # instantly on low-CPU hosts whose disk is wiped on every spin-down.
-RUN python -m scripts.warm_cache
+RUN CAD_WORKER=0 python -m scripts.warm_cache
 
 # Unprivileged runtime user; the part cache stays writable for uploads
 RUN useradd --create-home --uid 1000 appuser \

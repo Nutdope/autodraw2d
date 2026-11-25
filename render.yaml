@@ -37,3 +37,5 @@ services:
         value: "1500"
       - key: MAX_SOLIDS
         value: "10"
+      - key: WORKER_TIMEOUT_S # CAD jobs run in a worker process; 0.1 CPU needs headroom
+        value: "600"

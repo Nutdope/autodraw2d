@@ -14,7 +14,7 @@ import math
 from collections import defaultdict
 
 from ..geometry import vec
-from ..geometry.features import find_counterbores, fmt_mm
+from ..geometry.feature_math import find_counterbores, fmt_mm
 from ..geometry.models import PartAnalysis
 from .context import ViewCtx, build_contexts
 from .coverage import _straight, fill_gaps
@@ -392,7 +392,7 @@ class _Builder:
             ang = 45.0 if horizontal else 315.0  # up-right off the far end / down-right off the bottom end
             a = math.radians(ang)
             tip = (c2[0] + r * math.cos(a), c2[1] - r * math.sin(a))
-            from ..geometry.features import fmt_mm
+            from ..geometry.feature_math import fmt_mm
             self.dims.append(CircleDim(
                 type="leader", id=self._id("S"), view=name, cx=tip[0], cy=tip[1], radius=0.0,
                 leader_angle_deg=ang, leader_len_mm=8.0,

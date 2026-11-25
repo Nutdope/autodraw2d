@@ -19,9 +19,9 @@ from typing import Optional
 
 from ..geometry import VIEW_DEFS
 from ..geometry.models import PartAnalysis, SectionProjection
-from ..geometry.section import auto_depth, cut_axis
+from ..geometry.section_plane import auto_depth, cut_axis
 from ..geometry.orientation import Orientation, OrientationRequest, resolve
-from ..pipeline import analyze_part, compute_section
+from . import worker
 
 MAX_SECTIONS_IN_MEMORY = 32
 SECTION_VERSION = 1  # bump when section geometry changes, to skip stale disk caches
@@ -97,7 +97,8 @@ class PartStore:
                 except Exception:
                     sec = None
             if sec is None:
-                sec = compute_section(entry.directory / "part.step", entry.analysis, view, depth, entry.orientation)
+                sec = worker.run(worker.section_job, entry.directory / "part.step", entry.analysis, view,
+                                 depth, entry.orientation)
                 path.write_text(sec.model_dump_json(), encoding="utf-8")
         with self._mem_lock:
             self._sections[key] = sec
@@ -156,8 +157,8 @@ class PartStore:
             step = d / "part.step"
             step.write_bytes(data)
             try:
-                analysis = analyze_part(step, mesh_out=d / "mesh.stl", max_faces=max_faces,
-                                        max_solids=max_solids, orientation=orient)
+                # OpenCascade runs in the CAD worker process so this server stays responsive
+                analysis = worker.run(worker.analyze_job, step, d / "mesh.stl", max_faces, max_solids, orient)
             except Exception:
                 shutil.rmtree(d, ignore_errors=True)  # don't leave rejected uploads on disk
                 raise
