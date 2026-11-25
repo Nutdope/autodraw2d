@@ -18,7 +18,10 @@ def _list(name: str, default: str) -> list[str]:
 @dataclass(frozen=True)
 class Settings:
     cors_origins: list[str] = field(
-        default_factory=lambda: _list("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+        # Browsers send Origin without a trailing slash, so tolerate "https://site.app/" in the env
+        default_factory=lambda: [
+            o.rstrip("/") for o in _list("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+        ]
     )
     # Optional regex for extra allowed origins, e.g. Vercel previews: https://autodraw2d(-[a-z0-9-]+)?\.vercel\.app
     cors_origin_regex: str | None = os.getenv("CORS_ORIGIN_REGEX") or None
