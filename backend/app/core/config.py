@@ -22,6 +22,9 @@ class Settings:
     )
     cache_dir: Path = Path(os.getenv("CACHE_DIR", str(BACKEND_DIR / "cache")))
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "25"))
+    # Complexity guard for uploads: HLR memory grows with face count (512 MB hosts: keep ~1500)
+    max_faces: int = int(os.getenv("MAX_FACES", "1500"))
+    max_solids: int = int(os.getenv("MAX_SOLIDS", "10"))
     upload_rate_limit: str = os.getenv("UPLOAD_RATE_LIMIT", "20/hour")
     export_rate_limit: str = os.getenv("EXPORT_RATE_LIMIT", "60/hour")
     ai_rate_limit: str = os.getenv("AI_RATE_LIMIT", "5/hour")  # per client IP

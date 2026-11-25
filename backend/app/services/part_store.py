@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -87,7 +88,15 @@ class PartStore:
         return self._remember(PartEntry(part_id, meta["name"], meta["source"],
                                         meta.get("sample_id"), analysis, d))
 
-    def ingest(self, data: bytes, name: str, source: str, sample_id: Optional[str] = None) -> PartEntry:
+    def ingest(
+        self,
+        data: bytes,
+        name: str,
+        source: str,
+        sample_id: Optional[str] = None,
+        max_faces: Optional[int] = None,
+        max_solids: Optional[int] = None,
+    ) -> PartEntry:
         part_id = self.make_id(data)
         with self._lock_for(part_id):
             entry = self.get(part_id)
@@ -97,7 +106,11 @@ class PartStore:
             d.mkdir(parents=True, exist_ok=True)
             step = d / "part.step"
             step.write_bytes(data)
-            analysis = analyze_part(step, mesh_out=d / "mesh.stl")
+            try:
+                analysis = analyze_part(step, mesh_out=d / "mesh.stl", max_faces=max_faces, max_solids=max_solids)
+            except Exception:
+                shutil.rmtree(d, ignore_errors=True)  # don't leave rejected uploads on disk
+                raise
             analysis.part_name = name
             (d / "analysis.json").write_text(analysis.model_dump_json(), encoding="utf-8")
             (d / "meta.json").write_text(

@@ -15,7 +15,11 @@ class StepImportError(ValueError):
     pass
 
 
-def load_step(path: str | Path) -> Shape:
+class PartTooComplexError(StepImportError):
+    """Raised before hidden-line projection, whose memory use grows with face count."""
+
+
+def load_step(path: str | Path, max_faces: int | None = None, max_solids: int | None = None) -> Shape:
     path = Path(path)
     if not path.is_file():
         raise StepImportError(f"file not found: {path}")
@@ -31,6 +35,19 @@ def load_step(path: str | Path) -> Shape:
 
     if shape is None or shape.wrapped is None or shape.wrapped.IsNull():
         raise StepImportError("STEP file contains no geometry")
-    if not any(True for _ in iter_shapes(shape.wrapped, TopAbs_ShapeEnum.TopAbs_SOLID)):
+    solids = sum(1 for _ in iter_shapes(shape.wrapped, TopAbs_ShapeEnum.TopAbs_SOLID))
+    if not solids:
         raise StepImportError("STEP file contains no solid bodies (surfaces/wireframes only)")
+    if max_solids is not None and solids > max_solids:
+        raise PartTooComplexError(
+            f"Part too complex for this demo server: {solids} bodies (limit {max_solids}). "
+            "Upload a single part rather than an assembly."
+        )
+    if max_faces is not None:
+        faces = sum(1 for _ in iter_shapes(shape.wrapped, TopAbs_ShapeEnum.TopAbs_FACE))
+        if faces > max_faces:
+            raise PartTooComplexError(
+                f"Part too complex for this demo server: {faces} faces (limit {max_faces}). "
+                "Try a simpler part or remove cosmetic detail (threads, text, knurling)."
+            )
     return shape

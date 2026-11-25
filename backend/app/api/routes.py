@@ -87,7 +87,8 @@ def upload_part(request: Request, file: UploadFile = File(...)) -> PartOut:
     if not data:
         raise HTTPException(400, "empty file")
     try:
-        entry = store.ingest(data, Path(name).stem, "upload")
+        entry = store.ingest(data, Path(name).stem, "upload",
+                             max_faces=settings.max_faces, max_solids=settings.max_solids)
     except StepImportError as exc:
         raise HTTPException(400, str(exc)) from exc
     return part_out(entry)

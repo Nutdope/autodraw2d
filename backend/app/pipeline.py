@@ -23,6 +23,8 @@ def analyze_part(
     step_path: str | Path,
     views: Iterable[str] = ALL_VIEWS,
     mesh_out: Optional[str | Path] = None,
+    max_faces: Optional[int] = None,
+    max_solids: Optional[int] = None,
 ) -> PartAnalysis:
     timings: dict[str, float] = {}
 
@@ -30,7 +32,7 @@ def analyze_part(
         timings[key] = round((time.perf_counter() - t0) * 1000, 1)
 
     t = time.perf_counter()
-    shape = load_step(step_path)
+    shape = load_step(step_path, max_faces=max_faces, max_solids=max_solids)
     lap("import", t)
 
     t = time.perf_counter()
