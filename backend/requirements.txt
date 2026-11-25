@@ -1,0 +1,21 @@
+# AutoDraw 2D backend — Python 3.11–3.13 (3.12 recommended)
+
+# --- CAD kernel (Milestone 1) ---------------------------------------------
+build123d>=0.9,<0.11          # pulls in cadquery-ocp (OpenCascade bindings)
+ocp_gordon<0.3                # 0.3+ needs OCP 7.9 (OCP.collections); build123d 0.10 ships OCP 7.8
+pydantic>=2.7,<3
+
+# --- API layer (Milestone 2) ----------------------------------------------
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+python-dotenv>=1.0
+slowapi>=0.1.9
+
+# --- AI annotation (Milestone 3) ------------------------------------------
+google-genai>=1.0
+
+# --- Export (Milestone 4) -------------------------------------------------
+ezdxf>=1.3
+svglib>=1.5
+reportlab>=4.2
