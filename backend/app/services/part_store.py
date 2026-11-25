@@ -17,9 +17,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ..geometry.models import PartAnalysis
+from ..geometry import VIEW_DEFS
+from ..geometry.models import PartAnalysis, SectionProjection
+from ..geometry.section import auto_depth, cut_axis
 from ..geometry.orientation import Orientation, OrientationRequest, resolve
-from ..pipeline import analyze_part
+from ..pipeline import analyze_part, compute_section
+
+MAX_SECTIONS_IN_MEMORY = 32
+SECTION_VERSION = 1  # bump when section geometry changes, to skip stale disk caches
 
 # Bump whenever PartAnalysis gains fields so stale disk caches are recomputed.
 ANALYSIS_VERSION = 5
@@ -51,6 +56,7 @@ class PartStore:
         self._mem: OrderedDict[str, PartEntry] = OrderedDict()
         self._mem_lock = threading.Lock()
         self._locks: dict[str, threading.Lock] = {}
+        self._sections: OrderedDict[tuple, SectionProjection] = OrderedDict()
 
     @staticmethod
     def make_id(data: bytes) -> str:
@@ -67,6 +73,37 @@ class PartStore:
             while len(self._mem) > self.max_items:
                 self._mem.popitem(last=False)
         return entry
+
+    def section(self, entry: PartEntry, view: str, depth: Optional[float]) -> SectionProjection:
+        """Full section of `view`, cached in memory and next to the analysis on disk.
+        depth None = auto (through the most hole axes)."""
+        g = entry.analysis.geometry
+        vd = VIEW_DEFS[view]
+        i, _ = cut_axis(vd)
+        if depth is None:
+            depth = auto_depth(g, vd)
+        depth = round(min(max(depth, 0.0), g.size[i]), 3)
+        key = (entry.part_id, view, depth)
+        with self._mem_lock:
+            if key in self._sections:
+                self._sections.move_to_end(key)
+                return self._sections[key]
+        path = entry.directory / f"section_v{SECTION_VERSION}_{view}_{depth:.3f}.json"
+        with self._lock_for(entry.part_id):
+            sec = None
+            if path.is_file():
+                try:
+                    sec = SectionProjection.model_validate_json(path.read_text(encoding="utf-8"))
+                except Exception:
+                    sec = None
+            if sec is None:
+                sec = compute_section(entry.directory / "part.step", entry.analysis, view, depth, entry.orientation)
+                path.write_text(sec.model_dump_json(), encoding="utf-8")
+        with self._mem_lock:
+            self._sections[key] = sec
+            while len(self._sections) > MAX_SECTIONS_IN_MEMORY:
+                self._sections.popitem(last=False)
+        return sec
 
     def step_bytes(self, entry: PartEntry) -> bytes:
         return (entry.directory / "part.step").read_bytes()

@@ -105,6 +105,8 @@ export interface SheetConfig {
   ortho_views: OrthoView[];
   show_isometric: boolean;
   scale: string; // "auto" | "1:2"
+  section_view: OrthoView | null; // drawn as a full section (ISO 128-44)
+  section_depth: number | null; // mm behind the face nearest the viewer; null = auto
 }
 
 export interface Rect {
@@ -141,6 +143,34 @@ export interface SheetLayout {
   placements: ViewPlacement[];
   fits: boolean;
   warnings: string[];
+  section: SectionOverlay | null;
+}
+
+export interface OverlayText {
+  x: number;
+  y: number; // baseline
+  text: string;
+  size: number;
+  anchor: "start" | "middle" | "end";
+}
+
+/** backend/app/layout/section_overlay.py: replacement view geometry (view-local) +
+ *  paper-space hatching, cutting-plane line, arrows and labels. */
+export interface SectionOverlay {
+  view: OrthoView;
+  letter: string;
+  depth: number;
+  depth_max: number;
+  auto: boolean;
+  visible_svg: string;
+  tangent_svg: string;
+  center_marks: CenterMark[];
+  centerlines: Centerline[];
+  hatch: [number, number, number, number][];
+  lines: { x1: number; y1: number; x2: number; y2: number; style: "thick" | "thin" | "chain" }[];
+  arrows: Point2[][];
+  texts: OverlayText[];
+  label: OverlayText;
 }
 
 // --- annotations (backend/app/annotation/models.py) -------------------------

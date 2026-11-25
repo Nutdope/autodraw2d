@@ -8,7 +8,8 @@ from __future__ import annotations
 import math
 
 from ..annotation.models import CircleDim, LinearDim
-from ..geometry.models import PartAnalysis, ViewProjection
+from ..geometry.models import PartAnalysis, SectionProjection, ViewProjection
+from ..layout.section_overlay import label_y
 from ..layout.models import SheetLayout, ViewPlacement
 from .models import Arc, Circle, ExportRequest, Line, Poly, SheetModel, Solid, Text
 
@@ -34,7 +35,7 @@ def fit_size(text: str, width: float, size: float) -> float:
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
-def _view(m: SheetModel, v: ViewProjection, p: ViewPlacement, req: ExportRequest) -> None:
+def _view(m: SheetModel, v: ViewProjection, p: ViewPlacement, req: ExportRequest, sectioned: bool = False) -> None:
     s, xo, yo = p.scale, p.x_offset, p.y_offset
 
     def P(pt) -> tuple[float, float]:
@@ -57,7 +58,7 @@ def _view(m: SheetModel, v: ViewProjection, p: ViewPlacement, req: ExportRequest
     d = req.display
     if d.tangent:
         emit("TANGENT", v.tangent.primitives)
-    if d.hidden:
+    if d.hidden and not sectioned:  # sections omit hidden lines
         emit("HIDDEN", v.hidden.primitives)
         if d.tangent:
             emit("HIDDEN", v.tangent_hidden.primitives)
@@ -251,16 +252,42 @@ def fmt_value(v: float) -> str:
 
 
 # ---------------------------------------------------------------------------
-def build_sheet(analysis: PartAnalysis, lay: SheetLayout, req: ExportRequest) -> SheetModel:
+def _section(m: SheetModel, lay: SheetLayout, req: ExportRequest) -> None:
+    """Hatching, cutting-plane line, arrows and labels (computed in layout.section_overlay)."""
+    ov = lay.section
+    if ov is None:
+        return
+    for x1, y1, x2, y2 in ov.hatch:
+        m.add(Line("HATCH", x1, y1, x2, y2))
+    for ln in ov.lines:
+        if ln.style == "chain":
+            m.add(Line("CENTERLINES", ln.x1, ln.y1, ln.x2, ln.y2))
+        else:
+            m.add(Line("SECTION", ln.x1, ln.y1, ln.x2, ln.y2, weight=m.thick if ln.style == "thick" else m.thin))
+    for pts in ov.arrows:
+        m.add(Solid("SECTION", [(p[0], p[1]) for p in pts]))
+    for t in ov.texts:
+        m.add(Text("SECTION", t.x, t.y, t.text, t.size, t.anchor, bold=True))
+    place = next(p for p in lay.placements if p.view == ov.view)
+    y = label_y(ov.label.y, place.rect.y + place.rect.h, req.dimensions, ov.view)
+    m.add(Text("SECTION", ov.label.x, y, ov.label.text, ov.label.size, ov.label.anchor, bold=True))
+
+
+def build_sheet(analysis: PartAnalysis, lay: SheetLayout, req: ExportRequest,
+                section: SectionProjection | None = None) -> SheetModel:
     thick = 0.7 if lay.page_format in ("A1", "A2") else 0.5
     m = SheetModel(lay.page_width, lay.page_height, thick, thick / 2)
     _frame(m, lay)
     placements = {p.view: p for p in lay.placements}
     for p in lay.placements:
-        _view(m, analysis.views[p.view], p, req)
+        if section is not None and lay.section is not None and p.view == section.view:
+            _view(m, section.projection, p, req, sectioned=True)
+        else:
+            _view(m, analysis.views[p.view], p, req)
         if p.scale != lay.scale:
             m.add(Text("DIMENSIONS", p.rect.x + p.rect.w / 2, p.rect.y + p.rect.h + 7,
                        f"{p.view.upper()} ({p.scale_label})", 3.5, "middle"))
+    _section(m, lay, req)
     for d in req.dimensions:
         p = placements.get(d.view)
         v = analysis.views.get(d.view)

@@ -30,6 +30,7 @@ from ..core.rate_limit import limiter
 from ..geometry.loader import StepImportError
 from ..geometry.orientation import OrientationRequest
 from ..layout import SheetConfig, SheetLayout, compute_layout
+from ..layout.section_overlay import build_overlay
 from ..services.part_store import PartEntry, PartStore
 from .schemas import PartOut, SampleOut, part_out
 
@@ -126,11 +127,29 @@ def get_mesh(part_id: str) -> FileResponse:
                         headers={"Cache-Control": "public, max-age=86400, immutable"})
 
 
+def _section(entry: PartEntry, cfg: SheetConfig):
+    if cfg.section_view is None:
+        return None
+    try:
+        return store.section(entry, cfg.section_view, cfg.section_depth)
+    except Exception as exc:  # boolean failures on odd geometry
+        raise HTTPException(422, f"could not cut the section: {exc}") from exc
+
+
+def layout_with_section(entry: PartEntry, cfg: SheetConfig) -> SheetLayout:
+    lay = compute_layout(entry.analysis.views, cfg)
+    sec = _section(entry, cfg)
+    if sec is not None:
+        lay.section = build_overlay(sec, lay, entry.analysis.views, auto=cfg.section_depth is None,
+                                    depth_max=entry.analysis.geometry.size[sec.axis])
+    return lay
+
+
 @router.post("/parts/{part_id}/layout", response_model=SheetLayout)
 def layout(part_id: str, cfg: SheetConfig) -> SheetLayout:
     entry = _require(part_id)
     try:
-        return compute_layout(entry.analysis.views, cfg)
+        return layout_with_section(entry, cfg)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -155,7 +174,8 @@ def ai_quota(request: Request) -> dict:
 def export_part(part_id: str, req: ExportRequest, request: Request) -> Response:
     entry = _require(part_id)
     try:
-        data, media = export_sheet(entry.analysis, req)
+        data, media = export_sheet(entry.analysis, req, layout_with_section(entry, req.sheet),
+                                   _section(entry, req.sheet))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     name = export_filename(req, entry.name)

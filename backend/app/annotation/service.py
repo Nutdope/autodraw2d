@@ -27,7 +27,8 @@ from ..core.config import settings
 from ..core.rate_limit import limiter
 from ..geometry.models import PartAnalysis
 from .context import build_contexts
-from .deterministic import base_notes, deterministic_dimensions
+from .coverage import complete
+from .deterministic import base_notes, deterministic_dimensions, feature_notes
 from .gemini import build_payload, call_gemini
 from .models import AnnotateRequest, AnnotationSet, CircleDim, Dimension
 from .validate import MAX_OFFSET, validate_ai
@@ -58,8 +59,8 @@ def precomputed_path(sample_id: str, views: list[str]) -> Path:
     return PRECOMPUTED_DIR / sample_id / f"full__{views_key(views)}.json"
 
 
-def _merge_notes(tolerance: str, extra: list[str]) -> list[str]:
-    notes = base_notes("full", tolerance)
+def _merge_notes(tolerance: str, extra: list[str], feature: list[str]) -> list[str]:
+    notes = base_notes("full", tolerance) + feature
     covered = ("TOLERANC", "MILLIMET", "SHARP EDGE", "BURR")  # already stated by base notes
     for n in extra:
         if n not in notes and not any(k in n for k in covered):
@@ -71,9 +72,15 @@ def _ensure_feature_coverage(dims: list, analysis: PartAnalysis, views: list[str
     """Every recognised feature must be dimensioned even if the AI forgot it:
     hole / fillet / chamfer / slot-depth callouts by feature id, slot size and
     position dimensions by (view, orientation, value)."""
+    rules = deterministic_dimensions(analysis, views, "key")
+    # Slot depths shown as a dimension in the side view replace any "DEPTH x" leader
+    # an older AI / pre-computed layout put in the plan view.
+    side_depth = {fid for d in rules if d.type == "linear" and d.id.startswith("SD") for fid in d.feature_ids}
+    dims = [d for d in dims if not (isinstance(d, CircleDim) and d.type == "leader"
+                                    and d.label_text.startswith("DEPTH") and side_depth & set(d.feature_ids))]
     covered = {fid for d in dims if isinstance(d, CircleDim) for fid in d.feature_ids}
     linear = {(d.view, d.orientation, round(d.value_mm, 3)) for d in dims if d.type == "linear"}
-    for d in deterministic_dimensions(analysis, views, "key"):
+    for d in rules:
         if isinstance(d, CircleDim):
             if not covered & set(d.feature_ids):
                 dims.append(d)
@@ -109,19 +116,26 @@ def _clamp_offsets(dims: list) -> list:
     return out
 
 
-def _from_cache(c: CachedAI, req: AnnotateRequest, source: str) -> AnnotationSet:
+def _from_cache(c: CachedAI, req: AnnotateRequest, source: str, analysis: PartAnalysis) -> AnnotationSet:
+    # Caches may predate newer rules: re-check feature callouts and datum chains on serve.
+    views = list(req.ortho_views)
+    dims = complete(analysis, views, _ensure_feature_coverage(_clamp_offsets(list(c.dimensions)), analysis, views))
     return AnnotationSet(
-        mode="full", views=list(req.ortho_views), source=source,  # type: ignore[arg-type]
-        dimensions=_clamp_offsets(c.dimensions), notes=_merge_notes(req.tolerance, c.ai_notes), model=c.model, rejected=c.rejected,
+        mode="full", views=views, source=source,  # type: ignore[arg-type]
+        dimensions=dims, notes=_merge_notes(req.tolerance, c.ai_notes, feature_notes(analysis, dims)),
+        model=c.model, rejected=c.rejected,
     )
 
 
 def _deterministic(analysis: PartAnalysis, req: AnnotateRequest, reason: Optional[str] = None) -> AnnotationSet:
     views = list(req.ortho_views)
+    dims = deterministic_dimensions(analysis, views, req.mode)
+    notes = base_notes(req.mode, req.tolerance)
+    if req.mode in ("key", "full"):
+        notes += feature_notes(analysis, dims)
     return AnnotationSet(
         mode=req.mode, views=views, source="deterministic",
-        dimensions=deterministic_dimensions(analysis, views, req.mode),
-        notes=base_notes(req.mode, req.tolerance), fallback_reason=reason,
+        dimensions=dims, notes=notes, fallback_reason=reason,
     )
 
 
@@ -146,13 +160,13 @@ def annotate(
 
     views = list(req.ortho_views)
     if sample_id and precomputed_ok and (pre := _load(precomputed_path(sample_id, views))):
-        return _from_cache(pre, req, "precomputed")
+        return _from_cache(pre, req, "precomputed", analysis)
     if sample_id:
         # Built-in samples never spend API quota (public demo); uncovered view sets use the rules.
         return _deterministic(analysis, req, "sample_not_precomputed" if req.use_ai else "ai_not_requested")
     cache_file = part_dir / "annotations" / f"full__{views_key(views)}.json"
     if cached := _load(cache_file):
-        return _from_cache(cached, req, "ai_cached")
+        return _from_cache(cached, req, "ai_cached", analysis)
 
     if not req.use_ai:
         return _deterministic(analysis, req, "ai_not_requested")
@@ -177,7 +191,7 @@ def annotate(
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(result.model_dump_json(), encoding="utf-8")
-    return _from_cache(result, req, "ai")
+    return _from_cache(result, req, "ai", analysis)
 
 
 def ai_remaining(client_key: str) -> dict:

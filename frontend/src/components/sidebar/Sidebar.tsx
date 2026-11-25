@@ -3,6 +3,7 @@ import type { DrawingStandard, Orientation, PageFormat } from "../../api/types";
 import { useStore, type DimensionMode, type Tolerance } from "../../state/store";
 import { Field, Section, Segmented, Select, TextInput, Toggle } from "../ui/controls";
 import { OrientationControl } from "./OrientationControl";
+import { SectionControl } from "./SectionControl";
 import { ViewSelector } from "./ViewSelector";
 
 // three.js is ~700 kB: load it only once a part is shown.
@@ -257,6 +258,7 @@ export function Sidebar() {
             hint="Thin lines where fillets blend into faces"
           />
         </div>
+        <SectionControl />
       </Section>
 
       <Section title="Annotations">

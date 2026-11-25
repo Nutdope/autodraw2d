@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import re
 
-from ..geometry.models import PartAnalysis
-from ..layout import compute_layout
+from ..geometry.models import PartAnalysis, SectionProjection
+from ..layout import SheetLayout, compute_layout
 from .builder import build_sheet
 from .models import ExportRequest
 from .writers import to_dxf, to_pdf, to_svg
@@ -18,11 +18,13 @@ def export_filename(req: ExportRequest, fallback: str) -> str:
     return f"{slug}.{req.format}"
 
 
-def export_sheet(analysis: PartAnalysis, req: ExportRequest) -> tuple[bytes, str]:
+def export_sheet(analysis: PartAnalysis, req: ExportRequest, layout: SheetLayout | None = None,
+                 section: SectionProjection | None = None) -> tuple[bytes, str]:
     """Returns (file bytes, media type). The layout is recomputed server-side from the
     same SheetConfig the UI used, so placement is identical to the screen."""
-    layout = compute_layout(analysis.views, req.sheet)
-    model = build_sheet(analysis, layout, req)
+    if layout is None:
+        layout = compute_layout(analysis.views, req.sheet)
+    model = build_sheet(analysis, layout, req, section)
     title = req.title.partName or analysis.part_name
     if req.format == "dxf":
         return to_dxf(model), MEDIA["dxf"]

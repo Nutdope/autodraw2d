@@ -16,8 +16,31 @@ from .geometry.features import analyze_geometry
 from .geometry.loader import load_step
 from .geometry.orientation import Orientation, apply
 from .geometry.mesh import export_preview_stl
-from .geometry.models import PartAnalysis
+from .geometry.models import PartAnalysis, SectionProjection
+from .geometry.section import auto_depth, section_view
 from .geometry.projection import project_view
+
+
+def load_oriented(step_path, orientation: Optional[Orientation] = None, max_faces=None, max_solids=None):
+    shape = load_step(step_path, max_faces=max_faces, max_solids=max_solids)
+    if orientation is not None and not orientation.is_identity:
+        from build123d.topology import downcast
+
+        shape = type(shape)(downcast(apply(shape.wrapped, orientation)))
+    return shape
+
+
+def compute_section(step_path, analysis: PartAnalysis, view: str, depth: Optional[float],
+                    orientation: Optional[Orientation] = None) -> SectionProjection:
+    """Section of an analysed part: ``depth`` mm behind the face nearest the viewer
+    (None = through the most hole axes)."""
+    vd = VIEW_DEFS[view]
+    g = analysis.geometry
+    if depth is None:
+        depth = auto_depth(g, vd)
+    shape = load_oriented(step_path, orientation)
+    diag = math.sqrt(sum(c * c for c in g.size))
+    return section_view(shape.wrapped, g, vd, analysis.views[view], depth, diag)
 
 
 def analyze_part(
@@ -34,11 +57,7 @@ def analyze_part(
         timings[key] = round((time.perf_counter() - t0) * 1000, 1)
 
     t = time.perf_counter()
-    shape = load_step(step_path, max_faces=max_faces, max_solids=max_solids)
-    if orientation is not None and not orientation.is_identity:
-        from build123d.topology import downcast
-
-        shape = type(shape)(downcast(apply(shape.wrapped, orientation)))
+    shape = load_oriented(step_path, orientation, max_faces=max_faces, max_solids=max_solids)
     lap("import", t)
 
     t = time.perf_counter()

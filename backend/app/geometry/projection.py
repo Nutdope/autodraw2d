@@ -307,7 +307,10 @@ def project_view(
     view: ViewDef,
     features: list[CylinderFeature],
     part_diag: float,
+    frame: tuple[float, float, float, float] | None = None,
 ) -> ViewProjection:
+    """``frame`` forces the 2D bbox (xmin, ymin, xmax, ymax), e.g. so a section
+    shares the uncut view's coordinates."""
     t0 = time.perf_counter()
     deflection = min(0.05, max(0.002, part_diag * 2e-4))
 
@@ -317,7 +320,9 @@ def project_view(
         prims[layer] = [p for e in raw[layer] if (p := _edge_to_prim(e, deflection)) is not None]
 
     all_pts = [pt for layer in LAYERS for p in prims[layer] for pt in p.bbox_pts]
-    if all_pts:
+    if frame is not None:
+        xmin, ymin, xmax, ymax = frame
+    elif all_pts:
         xs, ys = [p[0] for p in all_pts], [p[1] for p in all_pts]
         xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
     else:

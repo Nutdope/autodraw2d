@@ -209,6 +209,51 @@ def export_all(a: PartAnalysis, lay: SheetLayout, cfg: SheetConfig, tag: str, ck
 
 
 # ---------------------------------------------------------------------------
+# Sections + dimension completeness
+# ---------------------------------------------------------------------------
+def check_section(a: PartAnalysis, step: Path, ck: Checker) -> None:
+    """Front view in full section: same frame as the uncut view, hatched cut faces,
+    a cutting-plane line in a second view, and clean DXF / PDF output."""
+    import ezdxf
+
+    from app.layout.section_overlay import build_overlay
+    from app.pipeline import compute_section
+
+    tag = f"{step.stem}__section"
+    sec = compute_section(step, a, "front", None)
+    base = a.views["front"]
+    ck.check(sec.projection.bbox == base.bbox, f"{tag}: section frame differs from the front view")
+    ck.check(len(sec.regions) > 0, f"{tag}: no cut faces to hatch")
+    ck.check(not sec.projection.hidden.primitives, f"{tag}: section should omit hidden lines")
+    cfg = SheetConfig(page_format="A3", ortho_views=["front", "top", "right"], section_view="front")
+    lay = compute_layout(a.views, cfg)
+    lay.section = build_overlay(sec, lay, a.views, auto=True, depth_max=a.geometry.size[sec.axis])
+    ov = lay.section
+    ck.check(ov is not None and len(ov.hatch) > 0, f"{tag}: no hatch lines")
+    ck.check(ov is not None and len(ov.arrows) == 2 and len(ov.texts) == 2, f"{tag}: cutting line needs 2 arrows + letters")
+    dims = deterministic_dimensions(a, list(cfg.ortho_views), "full")
+    req = ExportRequest(format="svg", sheet=cfg, dimensions=dims)
+    model = build_sheet(a, lay, req, sec)
+    svg = to_svg(model, tag)
+    (OUT_DIR / f"{tag}.svg").write_text(svg, encoding="utf-8")
+    ck.check("SECTION A-A" in svg and 'id="HATCH"' in svg, f"{tag}: SVG lacks section label / hatching")
+    doc = ezdxf.read(io.StringIO(to_dxf(model).decode("utf-8")))
+    ck.check(not doc.audit().has_errors, f"{tag}: DXF audit errors")
+    ck.check({"HATCH", "SECTION"} <= {e.dxf.layer for e in doc.modelspace()}, f"{tag}: DXF section layers empty")
+    ck.check(to_pdf(svg).startswith(b"%PDF"), f"{tag}: PDF export failed")
+
+
+def check_completeness(a: PartAnalysis, tag: str, ck: Checker) -> None:
+    """Full mode must tie every edge position and hole centre to the datum."""
+    from app.annotation.coverage import find_gaps
+
+    for views in (["front", "top", "right"], ["front", "top", "left"], ["front", "right"]):
+        gaps = find_gaps(a, views, deterministic_dimensions(a, views, "full"))
+        ck.check(not gaps, f"{tag} {'/'.join(views)}: undimensioned "
+                 + ", ".join(f"{g.axis}{g.world:g}" for g in gaps))
+
+
+# ---------------------------------------------------------------------------
 # Orientation: a Y-up export (SolidWorks / Inventor / Creo) must stand upright again
 # ---------------------------------------------------------------------------
 def check_orientation(ck: Checker) -> None:
@@ -260,6 +305,8 @@ def run_part(step: Path, part_id: str | None, configs: list[SheetConfig], ck: Ch
     check_arc_flags(a, ck)
     if part_id:
         check_sample_features(a, part_id, ck)
+    check_section(a, step, ck)
+    check_completeness(a, step.stem, ck)
 
     for cfg in configs:
         tag = f"{step.stem}__{cfg.page_format}_{cfg.orientation[:4]}_{cfg.standard}"

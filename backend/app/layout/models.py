@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
+
+from ..geometry.models import CenterMark, Centerline, Point2
 
 from ..geometry.views import OrthoViewName
 
@@ -29,6 +31,18 @@ class SheetConfig(BaseModel):
     ortho_views: list[OrthoViewName] = ["front", "top", "right"]
     show_isometric: bool = True
     scale: str = "auto"  # "auto" or "N:M", e.g. "1:2"
+    # Full section (ISO 128-44): this ortho view is drawn cut, `section_depth` mm behind
+    # its face nearest the viewer (None = auto: through the most hole axes).
+    section_view: Optional[OrthoViewName] = None
+    section_depth: Optional[float] = None
+
+    @model_validator(mode="after")
+    def _section_needs_view(self) -> "SheetConfig":
+        if self.section_view is not None and self.section_view not in self.ortho_views:
+            self.section_view = None  # the view was switched off: drop its section
+        if self.section_depth is not None and self.section_depth < 0:
+            raise ValueError("section_depth must be >= 0")
+        return self
 
     @field_validator("ortho_views")
     @classmethod
@@ -82,6 +96,44 @@ class ViewPlacement(BaseModel):
     grid_cell: Optional[tuple[int, int]] = None  # (col, row) relative to front; None = iso
 
 
+class OverlayLine(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    style: Literal["thick", "thin", "chain"]
+
+
+class OverlayText(BaseModel):
+    x: float
+    y: float  # baseline
+    text: str
+    size: float
+    anchor: Literal["start", "middle", "end"] = "middle"
+
+
+class SectionOverlay(BaseModel):
+    """Everything a renderer needs for a section, in PAPER mm (except the replacement
+    view geometry, which is view-local like any view)."""
+
+    view: str
+    letter: str
+    depth: float  # mm behind the face nearest the viewer
+    depth_max: float  # part extent along the view direction (UI slider range)
+    auto: bool
+    # replacement geometry for the sectioned view (view-local mm, like ViewOut)
+    visible_svg: str
+    tangent_svg: str
+    center_marks: list[CenterMark]
+    centerlines: list[Centerline]
+    # paper-space decorations
+    hatch: list[tuple[float, float, float, float]]
+    lines: list[OverlayLine]  # cutting-plane line in the parent view
+    arrows: list[list[Point2]]  # filled arrowheads
+    texts: list[OverlayText]  # letters at the arrows
+    label: OverlayText  # "SECTION A-A" under the view (renderers drop it below bottom dims)
+
+
 class SheetLayout(BaseModel):
     page_format: PageFormat
     orientation: Orientation
@@ -100,3 +152,4 @@ class SheetLayout(BaseModel):
     placements: list[ViewPlacement]
     fits: bool
     warnings: list[str] = []
+    section: Optional[SectionOverlay] = None

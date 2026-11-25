@@ -188,6 +188,19 @@ class ViewProjection(BaseModel):
     compute_ms: float
 
 
+class SectionProjection(BaseModel):
+    """A view drawn in full section (see app.geometry.section). Same 2D frame as the
+    uncut view, so its view-local coordinates match the uncut view exactly."""
+
+    view: str
+    depth: float  # mm behind the part face nearest the viewer
+    plane: float  # world coordinate of the cutting plane on `axis`
+    axis: int  # 0/1/2 = world X/Y/Z (the view direction's axis)
+    sign: float  # +1 / -1: direction toward the viewer along `axis`
+    projection: ViewProjection
+    regions: list[list[Point2]]  # closed loops of the cut faces (even-odd fill), view-local
+
+
 class PartAnalysis(BaseModel):
     part_name: str
     orientation: dict = {}  # app.geometry.orientation.Orientation (as dict, avoids an import cycle)

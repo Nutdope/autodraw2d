@@ -36,6 +36,7 @@ from .sheet import (
 )
 
 VIEW_CLEARANCE = 25.0  # paper mm kept free around every view for dimensions
+LABEL_BAND = 12.0  # extra room under a section view for its "SECTION A-A" label
 _EPS = 1e-6
 
 
@@ -151,7 +152,7 @@ def _grid_extents(grid: dict[str, tuple[int, int]], views: Mapping[str, ViewProj
     return _GridExtents(sorted(colmin), sorted(rowmin), colmin, colmax, rowmin, rowmax)
 
 
-def _block_size(g: _GridExtents, s: float, gap: float):
+def _block_size(g: _GridExtents, s: float, gap: float, band_row: Optional[int] = None):
     col_x: dict[int, float] = {}
     x = 0.0
     for c in g.cols:
@@ -161,7 +162,7 @@ def _block_size(g: _GridExtents, s: float, gap: float):
     y = 0.0
     for r in g.rows:
         row_y[r] = y
-        y += (g.rowmax[r] - g.rowmin[r]) * s + gap
+        y += (g.rowmax[r] - g.rowmin[r]) * s + gap + (LABEL_BAND if r == band_row else 0.0)
     return x - gap, y - gap, col_x, row_y
 
 
@@ -176,10 +177,11 @@ def _try_place(
     avail: _R,
     blockers: list[_R],
     gap: float,
+    band_row: Optional[int] = None,
 ) -> Optional[tuple[Optional[_R], Optional[_R]]]:
     ortho: Optional[_R] = None
     if g is not None:
-        bw, bh, _, _ = _block_size(g, s, gap)
+        bw, bh, _, _ = _block_size(g, s, gap, band_row)
         ortho = _R(avail.x, avail.y, bw, bh)
         if not _valid(ortho, avail, blockers):
             return None
@@ -218,6 +220,7 @@ def compute_layout(views: Mapping[str, ViewProjection], cfg: SheetConfig) -> She
 
     grid = ortho_grid(list(cfg.ortho_views), cfg.standard)
     g = _grid_extents(grid, views) if grid else None
+    band_row = grid[cfg.section_view][1] if cfg.section_view in grid else None
     iso = views["isometric"] if cfg.show_isometric else None
 
     all_scales = [scale_value(s) for s in STANDARD_SCALES]
@@ -231,7 +234,7 @@ def compute_layout(views: Mapping[str, ViewProjection], cfg: SheetConfig) -> She
         # sheet scale reads better than a postage-stamp pictorial.
         iso_candidates = ([s] + [x for x in all_scales if x < s][:1]) if iso else [None]
         for si in iso_candidates:
-            placed = _try_place(g, s, iso, si, avail, blockers, gap)
+            placed = _try_place(g, s, iso, si, avail, blockers, gap, band_row)
             if placed is not None:
                 found = (s, si, *placed)
                 break
@@ -246,7 +249,7 @@ def compute_layout(views: Mapping[str, ViewProjection], cfg: SheetConfig) -> She
         si = s if iso else None
         ortho_r = iso_r = None
         if g is not None:
-            bw, bh, _, _ = _block_size(g, s, gap)
+            bw, bh, _, _ = _block_size(g, s, gap, band_row)
             ortho_r = _R(avail.x, avail.y, bw, bh)
         if iso is not None:
             iso_r = _R(avail.right - iso.width * si, avail.y, iso.width * si, iso.height * si)
@@ -257,7 +260,7 @@ def compute_layout(views: Mapping[str, ViewProjection], cfg: SheetConfig) -> She
 
     placements: list[ViewPlacement] = []
     if g is not None and ortho_r is not None:
-        _, _, col_x, row_y = _block_size(g, s, gap)
+        _, _, col_x, row_y = _block_size(g, s, gap, band_row)
         order = ["front"] + [v for v in cfg.ortho_views if v != "front"]
         for name in order:
             c, r = grid[name]

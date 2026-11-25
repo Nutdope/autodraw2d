@@ -17,6 +17,8 @@ from ..geometry import vec
 from ..geometry.features import fmt_mm
 from ..geometry.models import PartAnalysis
 from .context import ViewCtx, build_contexts
+from .coverage import fill_gaps
+from .patterns import bolt_circles
 from .models import CircleDim, DimensionMode, LinearDim
 
 FIRST_LEVEL = 7.0
@@ -38,13 +40,55 @@ def base_notes(mode: DimensionMode, tolerance: str) -> list[str]:
     return notes
 
 
+class Levels:
+    """Stacking levels per (view, side). Dimensions whose extents don't overlap share a
+    level (a chain, or two short dims at opposite ends), so fewer levels are needed and
+    everything stays inside the 25 mm view clearance."""
+
+    def __init__(self, extent_of) -> None:
+        self._occ: dict[tuple[str, str], list[list[tuple[float, float]]]] = defaultdict(list)
+        self._extent_of = extent_of  # view -> (w, h) in view-local mm
+
+    def _margin(self, view: str) -> float:
+        w, h = self._extent_of(view)
+        return 0.06 * max(w, h, 1.0)  # room for the value text between neighbours
+
+    def _fits(self, view: str, side: str, n: int, span) -> bool:
+        levels = self._occ[(view, side)]
+        if n >= len(levels):
+            return True
+        if span is None:
+            return not levels[n]
+        m = self._margin(view)
+        return all(span[1] + m <= a or b + m <= span[0] for a, b in levels[n])
+
+    def _take(self, view: str, side: str, n: int, span) -> float:
+        levels = self._occ[(view, side)]
+        while len(levels) <= n:
+            levels.append([])
+        levels[n].append(span if span is not None else (-math.inf, math.inf))
+        return SIGN[side] * (FIRST_LEVEL + LEVEL_STEP * n)
+
+    def reserve(self, view: str, side: str, offset: float, span) -> None:
+        n = max(0, round((abs(offset) - FIRST_LEVEL) / LEVEL_STEP))
+        self._take(view, side, n, span)
+
+    def offset(self, view: str, side: str, span=None) -> float:
+        """Lowest free level on `side`, spilling to the opposite side when full."""
+        for s in (side, OPPOSITE[side]):
+            for n in range(MAX_LEVELS):
+                if self._fits(view, s, n, span):
+                    return self._take(view, s, n, span)
+        return self._take(view, side, MAX_LEVELS - 1, span)
+
+
 class _Builder:
     def __init__(self, analysis: PartAnalysis, ctx: dict[str, ViewCtx]) -> None:
         self.a = analysis
         self.ctx = ctx
         self.order = [v for v in VIEW_PRIORITY if v in ctx]
         self.dims: list = []
-        self._levels: dict[tuple[str, str], int] = defaultdict(int)
+        self.levels = Levels(lambda v: (self.ctx[v].w, self.ctx[v].h))
         self._n = 0
         self._chain_views: set[tuple[str, str]] = set()  # (view, orientation) used by shaft chains
         self._used_angles: dict[str, list[float]] = defaultdict(list)
@@ -54,16 +98,8 @@ class _Builder:
         self._n += 1
         return f"{prefix}{self._n}"
 
-    def _offset(self, view: str, side: str) -> float:
-        """Next free stacking level on `side`, spilling to the opposite side when full."""
-        for s in (side, OPPOSITE[side]):
-            n = self._levels[(view, s)]
-            if n < MAX_LEVELS:
-                self._levels[(view, s)] += 1
-                return SIGN[s] * (FIRST_LEVEL + LEVEL_STEP * n)
-        n = self._levels[(view, side)]
-        self._levels[(view, side)] += 1
-        return SIGN[side] * (FIRST_LEVEL + LEVEL_STEP * n)
+    def _offset(self, view: str, side: str, span=None) -> float:
+        return self.levels.offset(view, side, span)
 
     def _linear(self, view, p1, p2, orientation, side=None, value=None, prefix="", from_points=False,
                 feature_ids=None, points_offset=0.0):
@@ -73,7 +109,9 @@ class _Builder:
             value = abs(x2 - x1) if orientation == "horizontal" else abs(y2 - y1)
         if value < 0.01:
             return None
-        offset = points_offset if from_points else self._offset(view, side)
+        k = 0 if orientation == "horizontal" else 1
+        span = (min(p1[k], p2[k]), max(p1[k], p2[k]))
+        offset = points_offset if from_points else self._offset(view, side, span)
         d = LinearDim(
             id=self._id("L"), view=view, x1=x1, y1=y1, x2=x2, y2=y2, orientation=orientation,
             offset_mm=offset, offset_from="points" if from_points else "edge",
@@ -106,15 +144,18 @@ class _Builder:
     # -- feature rules -----------------------------------------------------
     def holes(self) -> None:
         groups = [g for g in self.a.geometry.feature_groups if g.kind == "hole"]
+        circles = {bc.feature_ids[0]: bc for bc in bolt_circles(self.a)}
         hole_marks: dict[str, list] = defaultdict(list)
         for g in groups:
             ids = set(g.feature_ids)
+            bc = next((c for fid, c in circles.items() if fid in ids), None)
             best, best_marks = None, []
             for name in self.order:
                 marks = [m for m in self.ctx[name].vp.center_marks if ids & set(m.feature_ids)]
                 if len(marks) > len(best_marks):
                     best, best_marks = name, marks
             if not best:
+                self._side_callout(g.label, g.feature_ids)
                 continue
             v = self.ctx[best]
             # Put the callout on the hole furthest up-right so the leader points away from the part.
@@ -124,9 +165,10 @@ class _Builder:
             self.dims.append(CircleDim(
                 type="diameter", id=self._id("D"), view=best, cx=m.cx, cy=m.cy, radius=r,
                 leader_angle_deg=angle, leader_len_mm=length,
-                label_text=g.label, feature_ids=g.feature_ids,
+                label_text=bc.label if bc else g.label, feature_ids=g.feature_ids,
             ))
-            hole_marks[best].extend(best_marks)
+            if not bc:  # a bolt circle is located by its PCD, not by x / y positions
+                hole_marks[best].extend(best_marks)
 
         for name, marks in hole_marks.items():
             v = self.ctx[name]
@@ -143,6 +185,31 @@ class _Builder:
                 if 1e-6 < y < v.h - 1e-6:
                     mk = by_y[y]
                     self._linear(name, (0.0, v.h), (mk.cx, mk.cy), "vertical", "left")
+
+    def _side_callout(self, label: str, feature_ids: list[str]) -> None:
+        """No active view shows the feature end-on: put the callout on its side view
+        (the axis line), so the size is never silently dropped."""
+        ids = set(feature_ids)
+        for name in self.order:
+            v = self.ctx[name]
+            cl = next((c for c in v.vp.centerlines if ids & set(c.feature_ids)), None)
+            if cl is None:
+                continue
+            f = next(f for f in self.a.geometry.features if f.id in ids)
+            # arrow on the feature's outline, half way along its axis line
+            (x0, y0), (x1, y1) = cl.p0, cl.p1
+            mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+            ln = math.hypot(x1 - x0, y1 - y0) or 1.0
+            nx, ny = -(y1 - y0) / ln, (x1 - x0) / ln
+            if ny > 0 or (abs(ny) < 1e-9 and nx < 0):
+                nx, ny = -nx, -ny  # the upper / right silhouette (y down)
+            px, py = mx + nx * f.radius, my + ny * f.radius
+            angle, length = self._leader(v, px, py)
+            self.dims.append(CircleDim(
+                type="leader", id=self._id("D"), view=name, cx=px, cy=py, radius=0.0,
+                leader_angle_deg=angle, leader_len_mm=length, label_text=label, feature_ids=feature_ids,
+            ))
+            return
 
     def bosses(self) -> None:
         bosses = [f for f in self.a.geometry.features if f.kind == "boss"]
@@ -224,7 +291,7 @@ class _Builder:
 
             orientation = "horizontal" if hax else "vertical"
             side = "top" if hax else "left"
-            off = self._offset(name, side)
+            off = self._offset(name, side, (bounds[0], bounds[-1]))
             for t0, t1 in zip(bounds, bounds[1:]):
                 d = LinearDim(
                     id=self._id("L"), view=name, x1=surface(t0)[0], y1=surface(t0)[1],
@@ -272,7 +339,8 @@ class _Builder:
             grp = next(fg for fg in g.feature_groups if fg.kind == "slot" and sl.id in fg.feature_ids)
             name = next((n for n in self.order if abs(vec.dot(sl.axis, self.ctx[n].vd.normal)) > 0.999), None)
             if name is None:
-                continue  # slot not seen in plan in any active view
+                self._slot_side_callout(sl, grp)
+                continue
             v = self.ctx[name]
             c1, c2 = v.local(sl.c1), v.local(sl.c2)
             r = sl.width / 2
@@ -318,7 +386,10 @@ class _Builder:
                     self._linear(name, (0.0, v.h), c1, "vertical", "left", feature_ids=fids)
                 else:
                     self._linear(name, (0.0, 0.0), c1, "horizontal", "top", feature_ids=fids)
-            # depth (or THRU) callout on the far rounded end
+            # depth: a real dimension in a view that shows the slot from the side;
+            # only when no such view is active, a "DEPTH" leader in the plan view
+            if not sl.through and self._slot_depth(sl, grp):
+                continue
             ang = 45.0 if horizontal else 315.0  # up-right off the far end / down-right off the bottom end
             a = math.radians(ang)
             tip = (c2[0] + r * math.cos(a), c2[1] - r * math.sin(a))
@@ -329,6 +400,55 @@ class _Builder:
                 label_text="THRU" if sl.through else f"DEPTH {fmt_mm(sl.depth)}",
                 feature_ids=grp.feature_ids,
             ))
+
+    def _slot_depth(self, sl, grp) -> bool:
+        """Dimension a slot / keyway depth in a view where both its depth axis and its
+        length lie in the drawing plane (mouth and floor are edges there).
+        Returns False when no active view shows it that way."""
+        name = next((n for n in self.order
+                     if abs(vec.dot(sl.axis, self.ctx[n].vd.normal)) < 1e-3
+                     and abs(vec.dot(sl.direction, self.ctx[n].vd.normal)) < 1e-3), None)
+        if name is None:
+            return False
+        v = self.ctx[name]
+        g = self.a.geometry
+        # the open side is the depth end nearer the part's outside along that axis
+        i = max(range(3), key=lambda k: abs(sl.axis[k]))
+        ends = [vec.add(sl.c2, vec.scale(sl.axis, s * sl.depth / 2)) for s in (1.0, -1.0)]
+        outside = lambda p: min(p[i] - g.bbox_min[i], g.bbox_max[i] - p[i])  # noqa: E731
+        mouth, floor = sorted(ends, key=outside)
+        # measure at the far rounded end, on the slot's centre plane
+        far = vec.scale(sl.direction, sl.width / 2)
+        pm, pf = v.local(vec.add(mouth, far)), v.local(vec.add(floor, far))
+        c1, c2 = v.local(sl.c1), v.local(sl.c2)
+        vertical = abs(pm[0] - pf[0]) < 1e-6
+        k = 0 if vertical else 1  # coordinate running along the slot in this view
+        sign = 1.0 if c2[k] >= c1[k] else -1.0
+        if not vertical:
+            sign = -sign  # horizontal dims: + is above; the far end points down (y down)
+        self.dims.append(LinearDim(
+            id=self._id("SD"), view=name, x1=pm[0], y1=pm[1], x2=pf[0], y2=pf[1],
+            orientation="vertical" if vertical else "horizontal",
+            offset_mm=sign * 8.0, offset_from="points", value_mm=round(sl.depth, 4),
+            feature_ids=[sl.id],
+        ))
+        return True
+
+    def _slot_side_callout(self, sl, grp) -> None:
+        """Slot seen only from the side: callout on the slot's (hidden) outline."""
+        mid = vec.scale(vec.add(sl.c1, sl.c2), 0.5)
+        for name in self.order:
+            v = self.ctx[name]
+            if abs(vec.dot(sl.direction, v.vd.normal)) > 1e-3:
+                continue  # the slot length must run across this view
+            px, py = v.local(mid)
+            angle, length = self._leader(v, px, py)
+            self.dims.append(CircleDim(
+                type="leader", id=self._id("S"), view=name, cx=px, cy=py, radius=0.0,
+                leader_angle_deg=angle, leader_len_mm=length, label_text=grp.label,
+                feature_ids=grp.feature_ids,
+            ))
+            return
 
     def arcs(self) -> None:
         for g in self.a.geometry.feature_groups:
@@ -356,7 +476,7 @@ class _Builder:
 
             xs = sorted({round(p.p0[0], 3) for p in vert})
             if 3 <= len(xs) <= 6 and (name, "horizontal") not in self._chain_views:
-                off = self._offset(name, "bottom")
+                off = self._offset(name, "top", (xs[0], xs[-1]))
                 lowest = {x: max(max(p.p0[1], p.p1[1]) for p in vert if round(p.p0[0], 3) == x) for x in xs}
                 for x0, x1 in zip(xs, xs[1:]):
                     self.dims.append(LinearDim(
@@ -366,7 +486,7 @@ class _Builder:
 
             ys = sorted({round(p.p0[1], 3) for p in horiz})
             if 3 <= len(ys) <= 6 and (name, "vertical") not in self._chain_views:
-                off = self._offset(name, "right")
+                off = self._offset(name, "left", (ys[0], ys[-1]))
                 rightmost = {y: max(max(p.p0[0], p.p1[0]) for p in horiz if round(p.p0[1], 3) == y) for y in ys}
                 for y0, y1 in zip(ys, ys[1:]):
                     self.dims.append(LinearDim(
@@ -393,7 +513,13 @@ class _Builder:
                 self._linear(name, (0.0, v.h), (0.0, 0.0), "vertical", "left")
 
 
-def deterministic_dimensions(analysis: PartAnalysis, views: list[str], mode: DimensionMode) -> list:
+    def fill_gaps(self) -> None:
+        """Tie every edge / hole centre the rules above left floating to the datum."""
+        self.dims += fill_gaps(self.a, list(self.ctx), self.dims, self._offset, self._id)
+
+
+def deterministic_dimensions(analysis: PartAnalysis, views: list[str], mode: DimensionMode,
+                             fill: bool = True) -> list:
     if mode == "none":
         return []
     b = _Builder(analysis, build_contexts(analysis, views))
@@ -406,7 +532,20 @@ def deterministic_dimensions(analysis: PartAnalysis, views: list[str], mode: Dim
     if mode == "full":
         b.profile_steps()
     b.overall()
+    if mode == "full" and fill:
+        b.fill_gaps()
     return b.dims
+
+
+def feature_notes(analysis: PartAnalysis, dims: list) -> list[str]:
+    """Radii no active view shows true can't get a leader: state them as a note."""
+    covered = {fid for d in dims if isinstance(d, CircleDim) for fid in d.feature_ids}
+    labels = [g.label for g in analysis.geometry.feature_groups
+              if g.kind in ("concave_arc", "convex_arc") and not covered & set(g.feature_ids)]
+    if not labels:
+        return []
+    radii = sorted({lbl.split(" ")[-1] for lbl in labels}, key=lambda r: float(r[1:]))
+    return [f"UNDIMENSIONED RADII {', '.join(radii)}"]
 
 
 def describe(d) -> str:

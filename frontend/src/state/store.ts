@@ -144,6 +144,8 @@ export const useStore = create<State>((set, get) => {
       ortho_views: ["front", "top", "left"],
       show_isometric: true,
       scale: "auto",
+      section_view: null,
+      section_depth: null,
     },
     display: { hidden: true, centerlines: true, tangent: false, grid: false },
     dimensionMode: "key",
@@ -256,7 +258,11 @@ export const useStore = create<State>((set, get) => {
       if (view === "front") return; // base view, always on
       const cur = get().sheet.ortho_views;
       if (cur.includes(view)) {
-        get().setSheet({ ortho_views: cur.filter((v) => v !== view) });
+        const sec = get().sheet.section_view;
+        get().setSheet({
+          ortho_views: cur.filter((v) => v !== view),
+          ...(sec === view ? { section_view: null, section_depth: null } : {}),
+        });
       } else if (cur.length >= MAX_ORTHO_VIEWS) {
         get().toast(`Maximum ${MAX_ORTHO_VIEWS} orthographic views — untick one first`, "info");
       } else {

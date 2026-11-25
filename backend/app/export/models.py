@@ -24,6 +24,8 @@ LAYERS: dict[str, tuple[int, str, int]] = {
     "TANGENT": (8, "CONTINUOUS", 18),
     "CENTERLINES": (1, "CENTER", 25),
     "DIMENSIONS": (3, "CONTINUOUS", 25),
+    "HATCH": (8, "CONTINUOUS", 18),
+    "SECTION": (7, "CONTINUOUS", 50),
     "BORDER": (7, "CONTINUOUS", 50),
     "TITLE_BLOCK": (7, "CONTINUOUS", 25),
 }

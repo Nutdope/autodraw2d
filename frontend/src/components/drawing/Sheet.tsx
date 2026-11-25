@@ -4,6 +4,7 @@ import { toleranceText, useStore } from "../../state/store";
 import { DimensionLayer, NotesBlock } from "./Dimensions";
 import { INK, lineWeights } from "./lineStyles";
 import { TitleBlock } from "./TitleBlock";
+import { SectionLayer } from "./SectionLayer";
 import { ViewGroup } from "./ViewGroup";
 
 const FONT = "Arial, Helvetica, sans-serif";
@@ -97,8 +98,21 @@ export const Sheet = forwardRef<SVGSVGElement, Props>(function Sheet({ part, lay
 
       {/* views */}
       {layout.placements.map((p) => {
-        const v = part.views[p.view];
+        let v = part.views[p.view];
         if (!v) return null;
+        const sec = layout.section;
+        if (sec && sec.view === p.view) {
+          // full section: cut geometry in the same frame, no hidden lines
+          v = {
+            ...v,
+            visible: { svg_path: sec.visible_svg },
+            tangent: { svg_path: sec.tangent_svg },
+            hidden: { svg_path: "" },
+            tangent_hidden: { svg_path: "" },
+            center_marks: sec.center_marks,
+            centerlines: sec.centerlines,
+          };
+        }
         return <ViewGroup key={p.view} view={v} placement={p} display={display} thick={thick} thin={thin} />;
       })}
 
@@ -118,6 +132,8 @@ export const Sheet = forwardRef<SVGSVGElement, Props>(function Sheet({ part, lay
             {`${p.view.toUpperCase()} (${p.scale_label})`}
           </text>
         ))}
+
+      {layout.section && <SectionLayer section={layout.section} layout={layout} thick={thick} thin={thin} />}
 
       <DimensionLayer part={part} layout={layout} thin={thin} />
       <NotesBlock layout={layout} notes={notes} />
