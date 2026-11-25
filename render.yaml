@@ -8,8 +8,8 @@ services:
     plan: free
     region: frankfurt # closest Render region to Europe; change before the first deploy if needed
     rootDir: backend # only changes under backend/ trigger a redeploy
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile # relative to rootDir (backend/)
+    dockerContext: . # relative to rootDir (backend/)
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
