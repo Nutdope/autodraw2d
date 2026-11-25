@@ -4,7 +4,7 @@ export function Toasts() {
   const toasts = useStore((s) => s.toasts);
   const dismiss = useStore((s) => s.dismissToast);
   return (
-    <div className="pointer-events-none fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+    <div className="pointer-events-none fixed bottom-16 left-1/2 z-50 flex w-[calc(100%-1.5rem)] -translate-x-1/2 sm:bottom-4 sm:w-auto flex-col items-center gap-2">
       {toasts.map((t) => (
         <button
           key={t.id}

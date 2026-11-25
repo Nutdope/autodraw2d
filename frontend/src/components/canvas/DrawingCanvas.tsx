@@ -33,7 +33,8 @@ export function DrawingCanvas() {
     const el = boxRef.current;
     if (!el || !pageW) return;
     const { width, height } = el.getBoundingClientRect();
-    const k = Math.min((width - 64) / pageW, (height - 64) / pageH);
+    const pad = width < 640 ? 16 : 64; // phones: use as much of the screen as possible
+    const k = Math.min((width - pad) / pageW, (height - pad) / pageH);
     setVp({ k, x: (width - pageW * k) / 2, y: (height - pageH * k) / 2 });
   }, [pageW, pageH]);
 
@@ -80,18 +81,62 @@ export function DrawingCanvas() {
     });
   };
 
+  // Active pointers on the canvas: one = pan, two = pinch-zoom (touch).
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; mx: number; my: number; vp: Viewport } | null>(null);
+
+  const startPinch = () => {
+    const el = boxRef.current;
+    const [a, b] = [...pointers.current.values()];
+    if (!el || !a || !b) return;
+    const r = el.getBoundingClientRect();
+    pinch.current = {
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mx: (a.x + b.x) / 2 - r.left,
+      my: (a.y + b.y) / 2 - r.top,
+      vp,
+    };
+    drag.current = null;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.button !== 1) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    drag.current = { px: e.clientX, py: e.clientY, x: vp.x, y: vp.y };
+    if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic events: panning still works without capture */
+    }
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) startPinch();
+    else if (pointers.current.size === 1) drag.current = { px: e.clientX, py: e.clientY, x: vp.x, y: vp.y };
   };
   const onPointerMove = (e: React.PointerEvent) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const p = pinch.current;
+    if (p && pointers.current.size >= 2) {
+      const el = boxRef.current;
+      const [a, b] = [...pointers.current.values()];
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - r.left;
+      const my = (a.y + b.y) / 2 - r.top;
+      const k = Math.min(MAX_K, Math.max(MIN_K, p.vp.k * (Math.hypot(a.x - b.x, a.y - b.y) / p.dist)));
+      const f = k / p.vp.k;
+      // zoom around the starting midpoint, then follow the midpoint as it moves
+      setVp({ k, x: mx - (p.mx - p.vp.x) * f, y: my - (p.my - p.vp.y) * f });
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     setVp((v) => ({ ...v, x: d.x + e.clientX - d.px, y: d.y + e.clientY - d.py }));
   };
-  const onPointerUp = () => {
-    drag.current = null;
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    pinch.current = null;
+    // lifting one finger of a pinch continues as a pan with the other
+    const rest = [...pointers.current.values()][0];
+    drag.current = rest ? { px: rest.x, py: rest.y, x: vp.x, y: vp.y } : null;
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -104,7 +149,7 @@ export function DrawingCanvas() {
   return (
     <div
       ref={boxRef}
-      className={`relative h-full w-full overflow-hidden select-none bg-[radial-gradient(circle,#1e293b_1px,transparent_1px)] [background-size:18px_18px] cursor-grab active:cursor-grabbing`}
+      className={`relative h-full w-full touch-none overflow-hidden select-none bg-[radial-gradient(circle,#1e293b_1px,transparent_1px)] [background-size:18px_18px] cursor-grab active:cursor-grabbing`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -129,7 +174,7 @@ export function DrawingCanvas() {
       )}
 
       {/* status banners */}
-      <div className="pointer-events-none absolute left-1/2 top-3 flex -translate-x-1/2 flex-col items-center gap-2">
+      <div className="pointer-events-none absolute left-1/2 top-3 flex w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col items-center gap-2">
         {layout && !layout.fits && (
           <Banner tone="warn">{layout.warnings[0] ?? "Views do not fit this sheet."}</Banner>
         )}
@@ -160,7 +205,7 @@ export function DrawingCanvas() {
       {/* zoom controls */}
       {layout && (
         <div
-          className="absolute bottom-4 right-4 flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/90 p-1 text-xs shadow-lg"
+          className="absolute bottom-3 right-3 flex items-center sm:bottom-4 sm:right-4 gap-1 rounded-lg border border-slate-700 bg-slate-900/90 p-1 text-xs shadow-lg"
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -200,7 +245,7 @@ function CtlButton({
       type="button"
       title={title}
       onClick={onClick}
-      className={`h-7 min-w-7 rounded px-2 font-medium transition ${
+      className={`h-9 min-w-9 rounded px-2 font-medium transition sm:h-7 sm:min-w-7 ${
         active ? "bg-sky-500/20 text-sky-300" : "text-slate-300 hover:bg-slate-800"
       }`}
     >

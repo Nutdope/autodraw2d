@@ -6,15 +6,18 @@ export function EmptyState() {
   const backend = useStore((s) => s.backend);
   const retry = useStore((s) => s.init);
   return (
-    <div className="absolute inset-0 grid place-items-center p-6" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-2xl">
+    <div className="absolute inset-0 grid place-items-center overflow-y-auto p-3 sm:p-6" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-5 text-center sm:p-8 shadow-2xl">
         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-xl bg-sky-500/15 text-sky-300">
           <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M12 3 3 7.5v9L12 21l9-4.5v-9z" />
             <path d="M3 7.5 12 12l9-4.5M12 12v9" />
           </svg>
         </div>
-        <h2 className="text-lg font-semibold text-slate-100">Drop a STEP file to start</h2>
+        <h2 className="text-lg font-semibold text-slate-100">
+          <span className="hidden md:inline">Drop a STEP file to start</span>
+          <span className="md:hidden">Upload a STEP file to start</span>
+        </h2>
         <p className="mt-2 text-sm text-slate-400">
           AutoDraw computes exact hidden-line views, hole callouts and an ISO/ANSI sheet layout from your 3D
           model. No file handy? Try a sample part:

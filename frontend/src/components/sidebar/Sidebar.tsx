@@ -117,6 +117,42 @@ function AnnotationStatus() {
   );
 }
 
+/** Samples live in the toolbar on wide screens; below `lg` they move here. */
+function SamplePicker() {
+  const samples = useStore((s) => s.samples);
+  const part = useStore((s) => s.part);
+  const loading = useStore((s) => s.loading);
+  const loadSample = useStore((s) => s.loadSample);
+  const setSidebarOpen = useStore((s) => s.setSidebarOpen);
+  if (samples.length === 0) return null;
+  return (
+    <div className="border-b border-slate-800 px-4 py-3 lg:hidden">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sample parts</div>
+      <div className="flex flex-wrap gap-2">
+        {samples.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            disabled={!!loading}
+            title={s.description}
+            onClick={() => {
+              setSidebarOpen(false);
+              loadSample(s.id);
+            }}
+            className={`rounded-md border px-3 py-1.5 text-sm transition disabled:opacity-50 ${
+              part?.sample_id === s.id
+                ? "border-sky-500/60 bg-sky-500/10 text-sky-200"
+                : "border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white"
+            }`}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Sidebar() {
   const sheet = useStore((s) => s.sheet);
   const setSheet = useStore((s) => s.setSheet);
@@ -130,9 +166,24 @@ export function Sidebar() {
   const customTolerance = useStore((s) => s.customTolerance);
   const setTolerance = useStore((s) => s.setTolerance);
   const layout = useStore((s) => s.layout);
+  const setSidebarOpen = useStore((s) => s.setSidebarOpen);
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col overflow-y-auto border-r border-slate-800 bg-slate-950">
+    <aside className="flex h-full w-full shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-slate-800 bg-slate-950">
+      <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2.5 md:hidden">
+        <span className="text-sm font-semibold text-slate-200">Drawing settings</span>
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(false)}
+          aria-label="Close settings"
+          className="grid h-9 w-9 place-items-center rounded-md text-slate-400 hover:bg-slate-800 hover:text-white"
+        >
+          <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 5l10 10M15 5 5 15" />
+          </svg>
+        </button>
+      </div>
+      <SamplePicker />
       <Section title="Part">
         <PartInfo />
       </Section>

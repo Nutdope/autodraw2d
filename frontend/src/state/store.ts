@@ -61,6 +61,9 @@ interface State {
   annotations: AnnotationSet | null;
   aiPending: boolean;
   overrides: Record<string, DimOverride>;
+  /** Phone layout: settings drawer visibility (always shown on desktop). */
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
 
   init: (force?: boolean) => Promise<void>;
   loadSample: (id: string) => Promise<void>;
@@ -160,6 +163,8 @@ export const useStore = create<State>((set, get) => {
     aiPending: false,
     overrides: {},
     exporting: null,
+    sidebarOpen: false,
+    setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
     exportDrawing: async (format) => {
       const { part, layout, sheet, display, title, tolerance, customTolerance, annotations, overrides } = get();

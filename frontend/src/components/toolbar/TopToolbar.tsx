@@ -20,6 +20,8 @@ export function TopToolbar() {
   const exporting = useStore((s) => s.exporting);
   const exportDrawing = useStore((s) => s.exportDrawing);
   const layoutReady = useStore((s) => !!s.layout);
+  const sidebarOpen = useStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useStore((s) => s.setSidebarOpen);
   const fileRef = useRef<HTMLInputElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -29,21 +31,32 @@ export function TopToolbar() {
     const close = (e: MouseEvent) => {
       if (!exportRef.current?.contains(e.target as Node)) setExportOpen(false);
     };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
   }, [exportOpen]);
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-2 md:gap-4 border-b border-slate-800 bg-slate-950 px-4">
-      {/* left: brand */}
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-slate-800 bg-slate-950 px-2 sm:gap-2 sm:px-4 md:gap-4">
+      {/* left: menu (phones) + brand */}
+      <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Drawing settings"
+          aria-expanded={sidebarOpen}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-slate-300 hover:bg-slate-800 hover:text-white md:hidden"
+        >
+          <svg viewBox="0 0 20 20" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 5h14M3 10h14M3 15h14" />
+          </svg>
+        </button>
         <div className="flex items-center gap-2">
-          <svg viewBox="0 0 32 32" className="h-7 w-7">
+          <svg viewBox="0 0 32 32" className="h-7 w-7 shrink-0">
             <rect width="32" height="32" rx="7" fill="#0c4a6e" />
             <path d="M8 24V8h10l6 6v10z" fill="none" stroke="#38bdf8" strokeWidth="2.2" strokeLinejoin="round" />
             <path d="M11 19h10M11 15h6" stroke="#7dd3fc" strokeWidth="1.4" />
           </svg>
-          <span className="whitespace-nowrap font-semibold tracking-tight text-slate-100">
+          <span className="hidden whitespace-nowrap font-semibold tracking-tight text-slate-100 min-[400px]:inline">
             AutoDraw <span className="text-sky-400">2D</span>
           </span>
         </div>
@@ -71,7 +84,7 @@ export function TopToolbar() {
           type="button"
           disabled={!!loading}
           onClick={() => fileRef.current?.click()}
-          className="flex items-center gap-2 rounded-md bg-sky-500 px-3 py-1.5 text-sm font-medium text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
+          className="flex items-center gap-2 rounded-md bg-sky-500 px-2.5 py-1.5 sm:px-3 text-sm font-medium text-slate-950 transition hover:bg-sky-400 disabled:opacity-50"
         >
           <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M10 13V3M6 7l4-4 4 4M3 13v3h14v-3" />
@@ -100,13 +113,13 @@ export function TopToolbar() {
       </div>
 
       {/* right: AI + export */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <button
           type="button"
           disabled={!part || aiPending}
           onClick={() => autoDimensionAI()}
           title="Let Gemini lay out a complete dimension set (geometry is always measured by the CAD kernel)"
-          className="flex items-center gap-1.5 rounded-md border border-violet-500/50 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-md border border-violet-500/50 bg-violet-500/10 px-2.5 py-1.5 sm:px-3 text-sm text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-40"
         >
           {aiPending ? (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-violet-300 border-t-transparent" />
@@ -125,18 +138,22 @@ export function TopToolbar() {
             type="button"
             disabled={!part || !layoutReady || !!exporting}
             onClick={() => setExportOpen((o) => !o)}
-            className="flex items-center gap-1.5 rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 transition hover:border-slate-500 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5 sm:px-3 text-sm text-slate-200 transition hover:border-slate-500 disabled:opacity-40"
           >
             {exporting && (
               <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
             )}
-            {exporting ? `Exporting ${exporting.toUpperCase()}…` : "Export"}
+            {exporting ? (
+              <span className="hidden sm:inline">Exporting {exporting.toUpperCase()}…</span>
+            ) : (
+              "Export"
+            )}
             <svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="currentColor">
               <path d="M5 7l5 6 5-6z" />
             </svg>
           </button>
           {exportOpen && (
-            <div className="absolute right-0 top-full z-30 mt-1.5 w-72 overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
+            <div className="absolute right-0 top-full z-30 mt-1.5 w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl">
               {EXPORTS.map((x) => (
                 <button
                   key={x.ext}
