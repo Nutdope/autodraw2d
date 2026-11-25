@@ -14,6 +14,7 @@ from typing import Iterable, Optional
 from .geometry import ALL_VIEWS, VIEW_DEFS
 from .geometry.features import analyze_geometry
 from .geometry.loader import load_step
+from .geometry.orientation import Orientation, apply
 from .geometry.mesh import export_preview_stl
 from .geometry.models import PartAnalysis
 from .geometry.projection import project_view
@@ -25,6 +26,7 @@ def analyze_part(
     mesh_out: Optional[str | Path] = None,
     max_faces: Optional[int] = None,
     max_solids: Optional[int] = None,
+    orientation: Optional[Orientation] = None,
 ) -> PartAnalysis:
     timings: dict[str, float] = {}
 
@@ -33,6 +35,10 @@ def analyze_part(
 
     t = time.perf_counter()
     shape = load_step(step_path, max_faces=max_faces, max_solids=max_solids)
+    if orientation is not None and not orientation.is_identity:
+        from build123d.topology import downcast
+
+        shape = type(shape)(downcast(apply(shape.wrapped, orientation)))
     lap("import", t)
 
     t = time.perf_counter()

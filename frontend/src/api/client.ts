@@ -1,4 +1,4 @@
-import type { AnnotateRequest, AnnotationSet, Part, Sample, SheetConfig, SheetLayout } from "./types";
+import type { AnnotateRequest, AnnotationSet, ModelOrientation, Part, Sample, SheetConfig, SheetLayout, UpAxis } from "./types";
 
 export const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -39,6 +39,12 @@ export const api = {
     body.append("file", file);
     return request<Part>("/api/parts", { method: "POST", body });
   },
+  orient: (partId: string, up: UpAxis | "auto", turn: ModelOrientation["turn"]) =>
+    request<Part>(`/api/parts/${partId}/orient`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ up, turn }),
+    }),
   layout: (partId: string, cfg: SheetConfig, signal?: AbortSignal) =>
     request<SheetLayout>(`/api/parts/${partId}/layout`, {
       method: "POST",

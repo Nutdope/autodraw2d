@@ -9,6 +9,7 @@ GET  /api/parts/{part_id}/mesh.stl      -> binary STL for the 3D preview
 POST /api/parts/{part_id}/layout        -> SheetLayout (pure Python, ~1 ms)
 POST /api/parts/{part_id}/annotate      -> AnnotationSet (deterministic / cached / Gemini)
 POST /api/parts/{part_id}/export        -> .svg / .dxf / .pdf file of the user's final sheet
+POST /api/parts/{part_id}/orient        -> PartOut for the same file with another up axis / turn
 """
 from __future__ import annotations
 
@@ -27,6 +28,7 @@ from ..export.models import ExportRequest
 from ..export.service import export_filename, export_sheet
 from ..core.rate_limit import limiter
 from ..geometry.loader import StepImportError
+from ..geometry.orientation import OrientationRequest
 from ..layout import SheetConfig, SheetLayout, compute_layout
 from ..services.part_store import PartEntry, PartStore
 from .schemas import PartOut, SampleOut, part_out
@@ -94,6 +96,21 @@ def upload_part(request: Request, file: UploadFile = File(...)) -> PartOut:
     return part_out(entry)
 
 
+@router.post("/parts/{part_id}/orient", response_model=PartOut)
+@limiter.limit(settings.upload_rate_limit)
+def orient_part(part_id: str, req: OrientationRequest, request: Request) -> PartOut:
+    """Re-analyse the same STEP file with a different up axis / turn (new part id)."""
+    entry = _require(part_id)
+    try:
+        new = store.ingest(store.step_bytes(entry), entry.name, entry.source, entry.sample_id,
+                           max_faces=None if entry.sample_id else settings.max_faces,
+                           max_solids=None if entry.sample_id else settings.max_solids,
+                           orientation=req)
+    except StepImportError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return part_out(new, _material_for(new))
+
+
 @router.get("/parts/{part_id}", response_model=PartOut)
 def get_part(part_id: str) -> PartOut:
     entry = _require(part_id)
@@ -122,7 +139,8 @@ def layout(part_id: str, cfg: SheetConfig) -> SheetLayout:
 def annotate_part(part_id: str, req: AnnotateRequest, request: Request) -> AnnotationSet:
     """AI quota (AI_RATE_LIMIT per IP) is only charged when Gemini is actually called."""
     entry = _require(part_id)
-    return annotate(entry.analysis, entry.directory, entry.sample_id, req, get_remote_address(request))
+    return annotate(entry.analysis, entry.directory, entry.sample_id, req, get_remote_address(request),
+                    precomputed_ok=entry.orientation.is_identity)
 
 
 @router.get("/ai/quota")

@@ -70,6 +70,15 @@ export interface ViewData {
   centerlines: Centerline[];
 }
 
+export type UpAxis = "+Z" | "-Z" | "+Y" | "-Y" | "+X" | "-X";
+
+export interface ModelOrientation {
+  up: UpAxis;
+  turn: 0 | 90 | 180 | 270;
+  auto: boolean; // up axis was detected from the STEP header
+  source_system: string | null; // CAD system that wrote the file
+}
+
 export interface Part {
   part_id: string;
   name: string;
@@ -79,6 +88,7 @@ export interface Part {
   geometry: PartGeometry;
   views: Record<ViewName, ViewData>;
   mesh_url: string;
+  orientation: ModelOrientation;
 }
 
 export interface Sample {

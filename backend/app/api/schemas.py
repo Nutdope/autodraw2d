@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel
 
 from ..geometry.models import Centerline, CenterMark, PartGeometry, Vec3
+from ..geometry.orientation import Orientation
 from ..services.part_store import PartEntry
 
 
@@ -47,6 +48,7 @@ class PartOut(BaseModel):
     views: dict[str, ViewOut]
     mesh_url: str
     timings_ms: dict[str, float]
+    orientation: Orientation
 
 
 def part_out(entry: PartEntry, default_material: Optional[str] = None) -> PartOut:
@@ -78,4 +80,5 @@ def part_out(entry: PartEntry, default_material: Optional[str] = None) -> PartOu
         views=views,
         mesh_url=f"/api/parts/{entry.part_id}/mesh.stl",
         timings_ms=a.timings_ms,
+        orientation=entry.orientation,
     )

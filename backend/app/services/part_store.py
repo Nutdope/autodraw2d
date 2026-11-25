@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Optional
 
 from ..geometry.models import PartAnalysis
+from ..geometry.orientation import Orientation, OrientationRequest, resolve
 from ..pipeline import analyze_part
 
 # Bump whenever PartAnalysis gains fields so stale disk caches are recomputed.
-ANALYSIS_VERSION = 4
+ANALYSIS_VERSION = 5
 
 
 @dataclass
@@ -32,6 +33,10 @@ class PartEntry:
     sample_id: Optional[str]
     analysis: PartAnalysis
     directory: Path
+
+    @property
+    def orientation(self) -> Orientation:
+        return Orientation(**self.analysis.orientation) if self.analysis.orientation else Orientation()
 
     @property
     def mesh_path(self) -> Path:
@@ -62,6 +67,9 @@ class PartStore:
             while len(self._mem) > self.max_items:
                 self._mem.popitem(last=False)
         return entry
+
+    def step_bytes(self, entry: PartEntry) -> bytes:
+        return (entry.directory / "part.step").read_bytes()
 
     def get(self, part_id: str) -> Optional[PartEntry]:
         if not part_id.isalnum():
@@ -96,8 +104,12 @@ class PartStore:
         sample_id: Optional[str] = None,
         max_faces: Optional[int] = None,
         max_solids: Optional[int] = None,
+        orientation: Optional[OrientationRequest] = None,
     ) -> PartEntry:
-        part_id = self.make_id(data)
+        # Same file in another orientation = another drawing: the orientation key is
+        # part of the id, so every endpoint (layout / annotate / export) just works.
+        orient = resolve(orientation or OrientationRequest(), data)
+        part_id = f"{self.make_id(data)}{orient.key}"
         with self._lock_for(part_id):
             entry = self.get(part_id)
             if entry is not None:
@@ -107,11 +119,13 @@ class PartStore:
             step = d / "part.step"
             step.write_bytes(data)
             try:
-                analysis = analyze_part(step, mesh_out=d / "mesh.stl", max_faces=max_faces, max_solids=max_solids)
+                analysis = analyze_part(step, mesh_out=d / "mesh.stl", max_faces=max_faces,
+                                        max_solids=max_solids, orientation=orient)
             except Exception:
                 shutil.rmtree(d, ignore_errors=True)  # don't leave rejected uploads on disk
                 raise
             analysis.part_name = name
+            analysis.orientation = orient.model_dump()
             (d / "analysis.json").write_text(analysis.model_dump_json(), encoding="utf-8")
             (d / "meta.json").write_text(
                 json.dumps({"name": name, "source": source, "sample_id": sample_id,

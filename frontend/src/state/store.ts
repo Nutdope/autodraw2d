@@ -4,6 +4,8 @@ import { resolveDimensions } from "../components/drawing/dimensionGeometry";
 import type {
   AnnotationSet,
   DimensionMode,
+  ModelOrientation,
+  UpAxis,
   DimOverride,
   OrthoView,
   Part,
@@ -63,6 +65,7 @@ interface State {
   init: (force?: boolean) => Promise<void>;
   loadSample: (id: string) => Promise<void>;
   uploadFile: (file: File) => Promise<void>;
+  reorient: (up: UpAxis | "auto", turn: ModelOrientation["turn"]) => Promise<void>;
   setSheet: (patch: Partial<SheetConfig>) => void;
   toggleOrtho: (view: OrthoView) => void;
   setDisplay: (patch: Partial<DisplayOptions>) => void;
@@ -226,6 +229,17 @@ export const useStore = create<State>((set, get) => {
       try {
         applyPart(await api.upload(file));
         get().toast(`${file.name} loaded`, "success");
+      } catch (e) {
+        fail(e);
+      }
+    },
+
+    reorient: async (up, turn) => {
+      const part = get().part;
+      if (!part) return;
+      set({ loading: "Re-orienting the part… (new hidden-line views)" });
+      try {
+        applyPart(await api.orient(part.part_id, up, turn));
       } catch (e) {
         fail(e);
       }

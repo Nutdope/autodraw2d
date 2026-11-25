@@ -139,12 +139,13 @@ def annotate(
     sample_id: Optional[str],
     req: AnnotateRequest,
     client_key: str,
+    precomputed_ok: bool = True,
 ) -> AnnotationSet:
     if req.mode != "full":
         return _deterministic(analysis, req)
 
     views = list(req.ortho_views)
-    if sample_id and (pre := _load(precomputed_path(sample_id, views))):
+    if sample_id and precomputed_ok and (pre := _load(precomputed_path(sample_id, views))):
         return _from_cache(pre, req, "precomputed")
     if sample_id:
         # Built-in samples never spend API quota (public demo); uncovered view sets use the rules.

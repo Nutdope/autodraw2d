@@ -190,6 +190,7 @@ class ViewProjection(BaseModel):
 
 class PartAnalysis(BaseModel):
     part_name: str
+    orientation: dict = {}  # app.geometry.orientation.Orientation (as dict, avoids an import cycle)
     geometry: PartGeometry
     views: dict[str, ViewProjection]
     mesh_file: Optional[str] = None

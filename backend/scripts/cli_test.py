@@ -209,6 +209,35 @@ def export_all(a: PartAnalysis, lay: SheetLayout, cfg: SheetConfig, tag: str, ck
 
 
 # ---------------------------------------------------------------------------
+# Orientation: a Y-up export (SolidWorks / Inventor / Creo) must stand upright again
+# ---------------------------------------------------------------------------
+def check_orientation(ck: Checker) -> None:
+    import re
+
+    from build123d import Axis, export_step
+
+    from app.geometry.loader import load_step
+    from app.geometry.orientation import OrientationRequest, resolve
+
+    src = sample_path("mounting_bracket")
+    yup = OUT_DIR / "orientation_yup_solidworks.step"
+    export_step(load_step(src).rotate(Axis.X, -90), str(yup))  # Z-up -> Y-up, like SolidWorks
+    text = re.sub(r"FILE_NAME\((.*?)\);",
+                  "FILE_NAME('b.SLDPRT','2026-01-01T00:00:00',(''),(''),'SwSTEP 2.0','SolidWorks 2024','');",
+                  yup.read_text(encoding="latin-1"), count=1, flags=re.S)
+    yup.write_text(text, encoding="latin-1")
+
+    orient = resolve(OrientationRequest(), yup.read_bytes())
+    ck.check(orient.up == "+Y" and orient.auto, f"orientation: SolidWorks header should auto-detect +Y, got {orient}")
+    size = analyze_part(yup, views=["front"], orientation=orient).geometry.size
+    want = SAMPLE_PARTS["mounting_bracket"].expect["size"]
+    ck.check(all(abs(a - b) < 0.01 for a, b in zip(size, want)),
+             f"orientation: Y-up bracket should stand as {want}, got {size}")
+    native = resolve(OrientationRequest(), src.read_bytes())
+    ck.check(native.is_identity, f"orientation: build123d samples must stay Z-up, got {native}")
+
+
+# ---------------------------------------------------------------------------
 def print_summary(a: PartAnalysis) -> None:
     g = a.geometry
     print(f"  size      {g.size[0]:.2f} x {g.size[1]:.2f} x {g.size[2]:.2f} mm   "
@@ -272,6 +301,8 @@ def main() -> int:
                 return 2
             run_part(path, part_id, configs, ck)
 
+    if not args.step:
+        check_orientation(ck)
     print(f"\n{ck.passes} checks passed, {len(ck.failures)} failed.  Output: {OUT_DIR}")
     return 1 if ck.failures else 0
 

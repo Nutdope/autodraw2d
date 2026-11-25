@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import type { DrawingStandard, Orientation, PageFormat } from "../../api/types";
 import { useStore, type DimensionMode, type Tolerance } from "../../state/store";
 import { Field, Section, Segmented, Select, TextInput, Toggle } from "../ui/controls";
+import { OrientationControl } from "./OrientationControl";
 import { ViewSelector } from "./ViewSelector";
 
 // three.js is ~700 kB: load it only once a part is shown.
@@ -25,6 +26,7 @@ function PartInfo() {
       <Suspense fallback={<div className="h-48 animate-pulse rounded-lg border border-slate-800 bg-slate-900" />}>
         <PartPreview3D part={part} />
       </Suspense>
+      <OrientationControl orientation={part.orientation} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-slate-500">Size</dt>
         <dd className="tabular-nums text-slate-200">
