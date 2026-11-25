@@ -9,7 +9,7 @@ import { ViewSelector } from "./ViewSelector";
 // three.js is ~700 kB: load it only once a part is shown.
 const PartPreview3D = lazy(() => import("../preview/PartPreview3D").then((m) => ({ default: m.PartPreview3D })));
 
-const SCALES = ["auto", "5:1", "2:1", "1:1", "1:2", "1:5", "1:10", "1:20"];
+const SCALES = ["auto", "5:1", "2:1", "1:1", "1:2", "1:3", "1:4", "1:5", "1:10", "1:20"];
 const MATERIALS = ["S235JR", "S355J2", "C45", "42CrMo4", "1.4301 (304)", "Al 6061-T6", "Al 7075-T6", "PA6", "POM-C"];
 const ROUGHNESS = ["Ra 0.8", "Ra 1.6", "Ra 3.2", "Ra 6.3", "Ra 12.5"];
 

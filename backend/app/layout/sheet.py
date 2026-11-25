@@ -20,10 +20,11 @@ TITLE_BLOCK_W = 180.0  # ISO 7200 recommended width
 TITLE_BLOCK_H = {"A4": 46.0, "A3": 56.0, "A2": 56.0, "A1": 56.0}
 ZONE_TARGET = 50.0  # ISO 5457: zones ~50 mm
 
-# Preferred scales, largest first (ISO 5455). The last two are a safety net for
+# Preferred scales, largest first (ISO 5455, plus 1:3 and 1:4, which are common in
+# practice and fill the big jump from 1:2 to 1:5). The last two are a safety net for
 # very large parts so we never fail to produce a drawing.
 STANDARD_SCALES: list[tuple[int, int]] = [
-    (5, 1), (2, 1), (1, 1), (1, 2), (1, 5), (1, 10), (1, 20), (1, 50), (1, 100),
+    (5, 1), (2, 1), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5), (1, 10), (1, 20), (1, 50), (1, 100),
 ]
 
 
