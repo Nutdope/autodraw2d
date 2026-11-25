@@ -113,6 +113,17 @@ def check_sample_features(a: PartAnalysis, part_id: str, ck: Checker) -> None:
     if "bosses" in exp:
         got = sorted(round(f.diameter, 3) for f in g.features if f.kind == "boss")
         ck.check(got == sorted(exp["bosses"]), f"{part_id}: bosses {got} != {exp['bosses']}")
+    for lbl in exp.get("chamfers", []):
+        ck.check(any(fg.kind == "chamfer" and fg.label == lbl for fg in g.feature_groups),
+                 f"{part_id}: expected chamfer callout '{lbl}', got "
+                 f"{[fg.label for fg in g.feature_groups if fg.kind == 'chamfer']}")
+    for w, length, depth in exp.get("slots", []):
+        ck.check(any(abs(s.width - w) < 1e-3 and abs(s.length - length) < 1e-3 and abs(s.depth - depth) < 0.01
+                     for s in g.slots),
+                 f"{part_id}: expected slot {w}x{length} depth {depth}, got "
+                 f"{[(s.width, s.length, s.depth) for s in g.slots]}")
+        ck.check(not any(fg.kind == "concave_arc" for fg in g.feature_groups),
+                 f"{part_id}: slot ends must not be reported as separate radii")
     for r in exp.get("convex_radii", []):
         ck.check(any(f.kind == "convex_arc" and abs(f.radius - r) < 1e-3 for f in g.features),
                  f"{part_id}: missing convex R{r}")

@@ -21,7 +21,7 @@ from ..geometry.models import PartAnalysis
 from ..pipeline import analyze_part
 
 # Bump whenever PartAnalysis gains fields so stale disk caches are recomputed.
-ANALYSIS_VERSION = 3
+ANALYSIS_VERSION = 4
 
 
 @dataclass

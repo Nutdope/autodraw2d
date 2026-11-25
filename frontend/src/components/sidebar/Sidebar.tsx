@@ -58,7 +58,9 @@ function PartInfo() {
                     ? "bg-sky-500/15 text-sky-300"
                     : f.kind === "boss"
                       ? "bg-emerald-500/15 text-emerald-300"
-                      : "bg-slate-700/60 text-slate-300"
+                      : f.kind === "slot"
+                        ? "bg-amber-500/15 text-amber-300"
+                        : "bg-slate-700/60 text-slate-300"
                 }`}
               >
                 {f.label}

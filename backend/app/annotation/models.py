@@ -48,10 +48,14 @@ class LinearDim(BaseModel):
     prefix: Literal["", "Ø"] = ""
     tolerance_text: Optional[str] = None
     text_shift_mm: float = 0.0
+    feature_ids: list[str] = []  # features this dimension describes (coverage checks)
 
 
 class CircleDim(BaseModel):
-    type: Literal["diameter", "radius"]
+    """Leader callout. diameter/radius: arrow on a circle/arc of `radius`;
+    leader: arrow on the point (cx, cy) itself (radius 0) — chamfers, slot depth."""
+
+    type: Literal["diameter", "radius", "leader"]
     id: str
     view: str
     cx: float

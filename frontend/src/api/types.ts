@@ -22,7 +22,7 @@ export interface CylinderFeature {
 }
 
 export interface FeatureGroup {
-  kind: CylinderFeature["kind"];
+  kind: CylinderFeature["kind"] | "chamfer" | "slot";
   label: string;
   count: number;
   diameter: number | null;
@@ -154,7 +154,7 @@ export interface LinearDim {
 }
 
 export interface CircleDim {
-  type: "diameter" | "radius";
+  type: "diameter" | "radius" | "leader"; // leader: arrow on (cx, cy) itself, radius 0
   id: string;
   view: ViewName;
   cx: number;

@@ -10,6 +10,7 @@ from build123d import (
     Axis,
     Box,
     BuildPart,
+    BuildSketch,
     CounterBoreHole,
     Cylinder,
     GeomType,
@@ -17,8 +18,11 @@ from build123d import (
     Location,
     Locations,
     Mode,
+    Plane,
+    SlotCenterToCenter,
     chamfer,
     export_step,
+    extrude,
     fillet,
 )
 
@@ -56,7 +60,8 @@ def make_mounting_bracket():
 
 
 def make_stepped_shaft():
-    """Shaft along +X: Ø20x30, Ø30x50, Ø24x40, Ø16x25; 1mm end chamfers; Ø6 cross hole."""
+    """Shaft along +X: Ø20x30, Ø30x50, Ø24x40, Ø16x25; 1mm end chamfers; Ø6 cross hole;
+    8 x 28 keyway, 4 deep, on the Ø24 step."""
     segments = [(20.0, 30.0), (30.0, 50.0), (24.0, 40.0), (16.0, 25.0)]
 
     with BuildPart() as shaft:
@@ -72,6 +77,12 @@ def make_stepped_shaft():
         # Ø6 cross hole through the Ø30 collar (axis along Z)
         with Locations((55, 0, 0)):
             Cylinder(radius=3, height=40, mode=Mode.SUBTRACT)
+
+        # Keyway: 8 wide, 28 long (centres 20 apart), 4 deep into the top of the Ø24 step
+        with BuildSketch(Plane.XY.offset(12)):
+            with Locations((100, 0)):
+                SlotCenterToCenter(20, 8)
+        extrude(amount=-4, mode=Mode.SUBTRACT)
 
     return shaft.part
 

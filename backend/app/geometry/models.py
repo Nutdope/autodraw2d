@@ -22,6 +22,7 @@ Point2 = tuple[float, float]
 Vec3 = tuple[float, float, float]
 
 FeatureKind = Literal["hole", "boss", "concave_arc", "convex_arc"]
+GroupKind = Literal["hole", "boss", "concave_arc", "convex_arc", "chamfer", "slot"]
 
 
 # ---------------------------------------------------------------------------
@@ -43,10 +44,41 @@ class CylinderFeature(BaseModel):
     face_count: int = 1
 
 
+class ChamferFeature(BaseModel):
+    """A short conical face joining a cylinder to an end face (edge break)."""
+
+    id: str
+    axis: Vec3  # canonical unit direction (shared with the cylinder it breaks)
+    axial: float  # length along the axis
+    radial: float  # change in radius
+    angle_deg: float  # angle between the chamfer face and the axis (45 for an equal-leg chamfer)
+    r_small: float
+    r_big: float
+    p_small: Vec3  # axis point at the small-radius end
+    p_big: Vec3  # axis point at the large-radius end
+    internal: bool  # chamfer on a hole edge (vs. on a shaft / boss)
+
+
+class SlotFeature(BaseModel):
+    """Obround slot / keyway: two half-cylinders of equal radius facing each other."""
+
+    id: str
+    width: float  # 2 x arc radius
+    length: float  # overall, end to end (centre distance + width)
+    center_distance: float
+    depth: float  # extent along the arc axis
+    axis: Vec3  # arc axis = slot depth direction
+    direction: Vec3  # unit vector from end c1 to end c2 (slot length direction)
+    c1: Vec3  # arc axis mid-points of the two rounded ends
+    c2: Vec3
+    through: Optional[bool] = None
+    feature_ids: list[str]  # the two arc features
+
+
 class FeatureGroup(BaseModel):
     """Identical features collapsed into a single callout (e.g. '4x Ø8.0 THRU')."""
 
-    kind: FeatureKind
+    kind: GroupKind
     label: str
     count: int
     diameter: Optional[float] = None
@@ -66,6 +98,8 @@ class PartGeometry(BaseModel):
     solid_count: int
     face_count: int
     features: list[CylinderFeature]
+    chamfers: list[ChamferFeature] = []
+    slots: list[SlotFeature] = []
     feature_groups: list[FeatureGroup]
 
 

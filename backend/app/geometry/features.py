@@ -21,7 +21,8 @@ from OCP.TopAbs import TopAbs_ShapeEnum, TopAbs_State
 from OCP.TopoDS import TopoDS, TopoDS_Shape
 
 from . import vec
-from .models import CylinderFeature, FeatureGroup, PartGeometry
+from .models import ChamferFeature, CylinderFeature, FeatureGroup, PartGeometry, SlotFeature
+from .recognition import chamfer_label, extract_chamfers, find_slots, slot_label
 from .topo import iter_shapes
 
 FULL_TURN = 2 * math.pi
@@ -236,13 +237,18 @@ def find_counterbores(features: list[CylinderFeature]) -> dict[str, CylinderFeat
     return out
 
 
-def group_features(features: list[CylinderFeature]) -> list[FeatureGroup]:
+def group_features(
+    features: list[CylinderFeature],
+    chamfers: list[ChamferFeature] | None = None,
+    slots: list[SlotFeature] | None = None,
+) -> list[FeatureGroup]:
     cbores = find_counterbores(features)
     cbore_ids = {b.id for b in cbores.values()}
+    slot_arc_ids = {fid for s in (slots or []) for fid in s.feature_ids}
     buckets: dict[tuple, list[CylinderFeature]] = defaultdict(list)
     for f in features:
-        if f.id in cbore_ids:
-            continue  # reported as part of the hole it counterbores
+        if f.id in cbore_ids or f.id in slot_arc_ids:
+            continue  # reported as part of the hole it counterbores / the slot it forms
         if f.kind == "hole":
             cb = cbores.get(f.id)
             if cb is not None:
@@ -287,6 +293,21 @@ def group_features(features: list[CylinderFeature]) -> list[FeatureGroup]:
                 feature_ids=ids,
             )
         )
+    # chamfers: identical edge breaks share one callout ("2x 1.0x45°")
+    cbuckets: dict[tuple, list[ChamferFeature]] = defaultdict(list)
+    for c in chamfers or []:
+        cbuckets[(round(c.axial, 3), round(c.angle_deg, 1), c.internal)].append(c)
+    for members in cbuckets.values():
+        c0, n = members[0], len(members)
+        groups.append(FeatureGroup(
+            kind="chamfer", label=(f"{n}x " if n > 1 else "") + chamfer_label(c0), count=n,
+            axis=c0.axis, feature_ids=[c.id for c in members],
+        ))
+    for sl in slots or []:
+        groups.append(FeatureGroup(
+            kind="slot", label=slot_label(sl), count=1, radius=sl.width / 2, axis=sl.axis,
+            through=sl.through, feature_ids=[sl.id, *sl.feature_ids],
+        ))
     return groups
 
 
@@ -295,6 +316,9 @@ def analyze_geometry(shape: TopoDS_Shape) -> PartGeometry:
     size = vec.sub(bmax, bmin)
     volume, area, com = mass_properties(shape)
     features = extract_features(shape, max(size))
+    solids = list(iter_shapes(shape, TopAbs_ShapeEnum.TopAbs_SOLID))
+    chamfers = extract_chamfers(shape)
+    slots = find_slots(features, solids, max(0.01, 1e-4 * max(size)))
     return PartGeometry(
         bbox_min=vec.clean3(bmin, 4),
         bbox_max=vec.clean3(bmax, 4),
@@ -305,5 +329,7 @@ def analyze_geometry(shape: TopoDS_Shape) -> PartGeometry:
         solid_count=sum(1 for _ in iter_shapes(shape, TopAbs_ShapeEnum.TopAbs_SOLID)),
         face_count=sum(1 for _ in iter_shapes(shape, TopAbs_ShapeEnum.TopAbs_FACE)),
         features=features,
-        feature_groups=group_features(features),
+        chamfers=chamfers,
+        slots=slots,
+        feature_groups=group_features(features, chamfers, slots),
     )

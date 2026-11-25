@@ -65,18 +65,19 @@ class _Builder:
         self._levels[(view, side)] += 1
         return SIGN[side] * (FIRST_LEVEL + LEVEL_STEP * n)
 
-    def _linear(self, view, p1, p2, orientation, side=None, value=None, prefix="", from_points=False):
+    def _linear(self, view, p1, p2, orientation, side=None, value=None, prefix="", from_points=False,
+                feature_ids=None, points_offset=0.0):
         x1, y1 = p1
         x2, y2 = p2
         if value is None:
             value = abs(x2 - x1) if orientation == "horizontal" else abs(y2 - y1)
         if value < 0.01:
             return None
-        offset = 0.0 if from_points else self._offset(view, side)
+        offset = points_offset if from_points else self._offset(view, side)
         d = LinearDim(
             id=self._id("L"), view=view, x1=x1, y1=y1, x2=x2, y2=y2, orientation=orientation,
             offset_mm=offset, offset_from="points" if from_points else "edge",
-            value_mm=round(value, 4), prefix=prefix,
+            value_mm=round(value, 4), prefix=prefix, feature_ids=feature_ids or [],
         )
         self.dims.append(d)
         return d
@@ -160,13 +161,37 @@ class _Builder:
             horizontal_axis = abs(a[1] - b[1]) < 1e-6
             segs.append((f, a, b, horizontal_axis))
 
+        # along-axis ranges cut by slots/keyways, so Ø dimensions avoid the notch
+        cuts = []
+        for sl in self.a.geometry.slots:
+            p1, p2 = v.local(sl.c1), v.local(sl.c2)
+            r = sl.width / 2
+            for k in (0, 1):
+                cuts.append((k, min(p1[k], p2[k]) - r, max(p1[k], p2[k]) + r))
+
+        def clear_mid(lo: float, hi: float, k: int) -> float:
+            """Middle of the widest stretch of [lo, hi] not covered by a slot."""
+            free = [(lo, hi)]
+            for ck, c0, c1 in cuts:
+                if ck != k:
+                    continue
+                nxt = []
+                for f0, f1 in free:
+                    if c1 <= f0 or c0 >= f1:
+                        nxt.append((f0, f1))
+                    else:
+                        nxt += [seg for seg in ((f0, c0), (c1, f1)) if seg[1] - seg[0] > 1e-6]
+                free = nxt or free
+            f0, f1 = max(free, key=lambda seg: seg[1] - seg[0])
+            return (f0 + f1) / 2
+
         for f, a, b, hax in segs:
             if hax:
-                xm, cy = (a[0] + b[0]) / 2, a[1]
+                xm, cy = clear_mid(min(a[0], b[0]), max(a[0], b[0]), 0), a[1]
                 self._linear(name, (xm, cy - f.radius), (xm, cy + f.radius), "vertical",
                              value=f.diameter, prefix="Ø", from_points=True)
             else:
-                ym, cx = (a[1] + b[1]) / 2, a[0]
+                ym, cx = clear_mid(min(a[1], b[1]), max(a[1], b[1]), 1), a[0]
                 self._linear(name, (cx - f.radius, ym), (cx + f.radius, ym), "horizontal",
                              value=f.diameter, prefix="Ø", from_points=True)
 
@@ -208,6 +233,102 @@ class _Builder:
                 )
                 self.dims.append(d)
             self._chain_views.add((name, orientation))
+
+    # -- chamfers ------------------------------------------------------------
+    @staticmethod
+    def _chamfer_point(v: ViewCtx, c) -> tuple[float, float]:
+        """Mid-point of the chamfer's lower silhouette edge in this view (local coords)."""
+        mid = vec.scale(vec.add(c.p_small, c.p_big), 0.5)
+        r_mid = (c.r_small + c.r_big) / 2
+        perp = vec.sub(v.vd.y_dir, vec.scale(c.axis, vec.dot(c.axis, v.vd.y_dir)))
+        if vec.norm(perp) < 1e-6:
+            perp = vec.sub(v.vd.x_dir, vec.scale(c.axis, vec.dot(c.axis, v.vd.x_dir)))
+        perp = vec.normalize(perp)
+        return v.local(vec.sub(mid, vec.scale(perp, r_mid)))  # minus: the lower edge on paper
+
+    def chamfers(self) -> None:
+        g = self.a.geometry
+        for grp in g.feature_groups:
+            if grp.kind != "chamfer":
+                continue
+            members = [c for c in g.chamfers if c.id in grp.feature_ids]
+            for name in self.order:
+                v = self.ctx[name]
+                if abs(vec.dot(members[0].axis, v.vd.normal)) > 1e-3:
+                    continue  # chamfer profile is only true in views containing the axis
+                pts = [(c, self._chamfer_point(v, c)) for c in members]
+                _, (x, y) = max(pts, key=lambda cp: cp[1][0])  # right-most: leader points away
+                self.dims.append(CircleDim(
+                    type="leader", id=self._id("C"), view=name, cx=x, cy=y, radius=0.0,
+                    leader_angle_deg=315.0 if x >= v.w / 2 else 225.0, leader_len_mm=8.0,
+                    label_text=grp.label, feature_ids=grp.feature_ids,
+                ))
+                break
+
+    # -- slots / keyways ----------------------------------------------------------
+    def slots(self) -> None:
+        g = self.a.geometry
+        for sl in g.slots:
+            grp = next(fg for fg in g.feature_groups if fg.kind == "slot" and sl.id in fg.feature_ids)
+            name = next((n for n in self.order if abs(vec.dot(sl.axis, self.ctx[n].vd.normal)) > 0.999), None)
+            if name is None:
+                continue  # slot not seen in plan in any active view
+            v = self.ctx[name]
+            c1, c2 = v.local(sl.c1), v.local(sl.c2)
+            r = sl.width / 2
+            horizontal = abs(c2[1] - c1[1]) < 1e-6
+            k = 0 if horizontal else 1  # coordinate running along the slot
+            if c1[k] > c2[k]:
+                c1, c2 = c2, c1
+            orient, cross = ("horizontal", "vertical") if horizontal else ("vertical", "horizontal")
+
+            def along(c, t):  # point on the slot centre-line at along-coordinate t
+                return (t, c[1]) if horizontal else (c[0], t)
+
+            def across(c, t):
+                return (c[0], t) if horizontal else (t, c[1])
+
+            e1, e2 = along(c1, c1[k] - r), along(c2, c2[k] + r)
+            fids = [sl.id]
+            # overall length, drawn through the slot centre-line
+            self._linear(name, e1, e2, orient, value=sl.length, from_points=True, feature_ids=fids)
+            # width, measured between the straight sides and drawn just outside the near end
+            # (left of a horizontal slot / above a vertical one) so it never sits inside the arc
+            m = 1 - k
+            self._linear(name, across(c1, c1[m] - r), across(c1, c1[m] + r), cross, value=sl.width,
+                         from_points=True, feature_ids=fids, points_offset=-8.0 if horizontal else 8.0)
+            # position along the slot direction, from the nearest view edge
+            extent = v.w if horizontal else v.h
+            if horizontal:
+                if e1[0] <= extent - e2[0]:
+                    self._linear(name, (0.0, e1[1]), e1, "horizontal", "top", feature_ids=fids)
+                else:
+                    self._linear(name, e2, (extent, e2[1]), "horizontal", "top", feature_ids=fids)
+            else:
+                if e2[1] >= extent - e1[1]:
+                    self._linear(name, (e2[0], extent), e2, "vertical", "left", feature_ids=fids)
+                else:
+                    self._linear(name, e1, (e1[0], 0.0), "vertical", "left", feature_ids=fids)
+            # position across the slot, unless it sits on a centre-line (e.g. a shaft keyway)
+            on_axis = any(
+                (abs(cl.p0[m] - cl.p1[m]) < 1e-6 and abs(cl.p0[m] - c1[m]) < 1e-3) for cl in v.vp.centerlines
+            ) or any(abs((mk.cy if horizontal else mk.cx) - c1[m]) < 1e-3 for mk in v.vp.center_marks)
+            if not on_axis:
+                if horizontal:
+                    self._linear(name, (0.0, v.h), c1, "vertical", "left", feature_ids=fids)
+                else:
+                    self._linear(name, (0.0, 0.0), c1, "horizontal", "top", feature_ids=fids)
+            # depth (or THRU) callout on the far rounded end
+            ang = 45.0 if horizontal else 315.0  # up-right off the far end / down-right off the bottom end
+            a = math.radians(ang)
+            tip = (c2[0] + r * math.cos(a), c2[1] - r * math.sin(a))
+            from ..geometry.features import fmt_mm
+            self.dims.append(CircleDim(
+                type="leader", id=self._id("S"), view=name, cx=tip[0], cy=tip[1], radius=0.0,
+                leader_angle_deg=ang, leader_len_mm=8.0,
+                label_text="THRU" if sl.through else f"DEPTH {fmt_mm(sl.depth)}",
+                feature_ids=grp.feature_ids,
+            ))
 
     def arcs(self) -> None:
         for g in self.a.geometry.feature_groups:
@@ -279,7 +400,9 @@ def deterministic_dimensions(analysis: PartAnalysis, views: list[str], mode: Dim
     if mode in ("key", "full"):
         b.holes()
         b.bosses()
+        b.slots()
         b.arcs()
+        b.chamfers()
     if mode == "full":
         b.profile_steps()
     b.overall()

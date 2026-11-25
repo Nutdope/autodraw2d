@@ -76,6 +76,9 @@ PLACEMENT
 - Locate holes from datum edges (baseline from the left / bottom edge of the view).
 - diameter: one callout per hole group on a circle from `circles`; label like "4x Ø8.0 THRU"
   (copy the group label). radius: callout on an arc from `arcs`, label like "R6.0".
+- Slots / keyways (feature kind "slot"): dimension the overall length through the slot centre-line,
+  the width, and its position from the nearest part edge. Chamfer and slot-depth callouts are added
+  automatically — do not put radius callouts on a slot's rounded ends.
 - leader_angle_deg: degrees CCW from +x with y UP; point leaders away from the part (45/135/225/315).
 - tolerance_text: "" unless a standard fit code is clearly implied by the feature; never invent numbers.
 

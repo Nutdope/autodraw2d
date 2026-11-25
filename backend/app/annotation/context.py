@@ -79,6 +79,8 @@ def _build_anchors(v: ViewCtx) -> list[Anchor]:
             add(m.cx + dx, m.cy + dy, "quadrant")
     for a in v.vp.arc_marks:
         add(a.cx, a.cy, "arc_center")
+        for dx, dy in ((a.r, 0), (-a.r, 0), (0, a.r), (0, -a.r)):
+            add(a.cx + dx, a.cy + dy, "arc_quadrant")  # e.g. the far ends of a slot
     for c in v.vp.centerlines:
         add(*c.p0, "axis_end")
         add(*c.p1, "axis_end")

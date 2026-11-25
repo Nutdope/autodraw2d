@@ -68,11 +68,19 @@ def _merge_notes(tolerance: str, extra: list[str]) -> list[str]:
 
 
 def _ensure_feature_coverage(dims: list, analysis: PartAnalysis, views: list[str]) -> list:
-    """Every hole / fillet group must have a callout even if the AI forgot it."""
+    """Every recognised feature must be dimensioned even if the AI forgot it:
+    hole / fillet / chamfer / slot-depth callouts by feature id, slot size and
+    position dimensions by (view, orientation, value)."""
     covered = {fid for d in dims if isinstance(d, CircleDim) for fid in d.feature_ids}
+    linear = {(d.view, d.orientation, round(d.value_mm, 3)) for d in dims if d.type == "linear"}
     for d in deterministic_dimensions(analysis, views, "key"):
-        if isinstance(d, CircleDim) and not covered & set(d.feature_ids):
+        if isinstance(d, CircleDim):
+            if not covered & set(d.feature_ids):
+                dims.append(d)
+                covered.update(d.feature_ids)
+        elif d.feature_ids and (d.view, d.orientation, round(d.value_mm, 3)) not in linear:
             dims.append(d)
+            linear.add((d.view, d.orientation, round(d.value_mm, 3)))
     return dims
 
 

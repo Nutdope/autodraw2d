@@ -39,12 +39,14 @@ SAMPLE_PARTS: dict[str, SamplePart] = {
         id="stepped_shaft",
         name="Stepped Shaft",
         filename="stepped_shaft.step",
-        description="4-step shaft Ø20/Ø30/Ø24/Ø16, 1mm end chamfers, Ø6 cross hole.",
+        description="4-step shaft Ø20/Ø30/Ø24/Ø16, 1mm end chamfers, Ø6 cross hole, 8x28 keyway.",
         default_material="42CrMo4",
         expect={
             "size": (145.0, 30.0, 30.0),
             "holes": [(6.0, 1, True)],
             "bosses": [16.0, 20.0, 24.0, 30.0],
+            "chamfers": ["2x 1.0x45°"],
+            "slots": [(8.0, 28.0, 4.0)],
         },
     ),
     "base_plate": SamplePart(
