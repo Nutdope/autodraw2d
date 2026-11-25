@@ -52,5 +52,40 @@ python -m samples.generate_samples
 python -m scripts.cli_test
 ```
 
-Output lands in `backend/out/`: `*.analysis.json`, `*.stl`, and one preview
+## Milestone 2 — run the web app
+
+Terminal 1 (backend, from `backend/` with the venv active):
+
+```powershell
+uvicorn app.main:app --reload --port 8000
+```
+
+Terminal 2 (frontend):
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173. Copy `frontend/.env.example` → `frontend/.env.local`
+to point `VITE_API_URL` at a deployed backend.
+
+### API
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET  | `/api/health` | liveness + whether Gemini is configured |
+| GET  | `/api/samples` | built-in sample parts |
+| POST | `/api/samples/{id}/load` | analyse (cached) a sample → part + all view projections |
+| POST | `/api/parts` | upload `.step` (multipart, 25 MB, rate-limited) |
+| GET  | `/api/parts/{id}/mesh.stl` | 3D preview mesh |
+| POST | `/api/parts/{id}/layout` | `SheetConfig` → `SheetLayout` (pure Python, ~1 ms) |
+
+Parts are content-addressed (sha256), so the expensive OCC work runs once per
+file; every sheet/view change only re-runs the layout endpoint.
+
+---
+
+Milestone 1 output lands in `backend/out/`: `*.analysis.json`, `*.stl`, and one preview
 sheet `*.svg` per configuration — open the SVGs in a browser to eyeball them.
